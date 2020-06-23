@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -47,7 +48,7 @@ func (s *daemonSetLister) GetPodDaemonSets(pod *v1.Pod) ([]*apps.DaemonSet, erro
 		return nil, fmt.Errorf("no daemon sets found for pod %v because it has no labels", pod.Name)
 	}
 
-	list, err := s.DaemonSets(pod.Namespace).List(labels.Everything())
+	list, err := s.DaemonSets(pod.AccountID, pod.Namespace).List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func (s *daemonSetLister) GetHistoryDaemonSets(history *apps.ControllerRevision)
 		return nil, fmt.Errorf("no DaemonSet found for ControllerRevision %s because it has no labels", history.Name)
 	}
 
-	list, err := s.DaemonSets(history.Namespace).List(labels.Everything())
+	list, err := s.DaemonSets(history.AccountID, history.Namespace).List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}

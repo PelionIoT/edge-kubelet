@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,8 +31,6 @@ import (
 
 	// ensure libs have a chance to globally register their flags
 	_ "github.com/golang/glog"
-	_ "k8s.io/kubernetes/pkg/credentialprovider/azure"
-	_ "k8s.io/kubernetes/pkg/credentialprovider/gcp"
 )
 
 // AddGlobalFlags explicitly registers flags that libraries (glog, verflag, etc.) register
@@ -40,7 +39,6 @@ import (
 func AddGlobalFlags(fs *pflag.FlagSet) {
 	addGlogFlags(fs)
 	addCadvisorFlags(fs)
-	addCredentialProviderFlags(fs)
 	verflag.AddFlags(fs)
 	logs.AddFlags(fs)
 }
@@ -62,33 +60,10 @@ func register(global *flag.FlagSet, local *pflag.FlagSet, globalName string) {
 	}
 }
 
-// pflagRegister adds a flag to local that targets the Value associated with the Flag named globalName in global
-func pflagRegister(global, local *pflag.FlagSet, globalName string) {
-	if f := global.Lookup(globalName); f != nil {
-		f.Name = normalize(f.Name)
-		local.AddFlag(f)
-	} else {
-		panic(fmt.Sprintf("failed to find flag in global flagset (pflag): %s", globalName))
-	}
-}
-
 // registerDeprecated registers the flag with register, and then marks it deprecated
 func registerDeprecated(global *flag.FlagSet, local *pflag.FlagSet, globalName, deprecated string) {
 	register(global, local, globalName)
 	local.Lookup(normalize(globalName)).Deprecated = deprecated
-}
-
-// addCredentialProviderFlags adds flags from k8s.io/kubernetes/pkg/credentialprovider
-func addCredentialProviderFlags(fs *pflag.FlagSet) {
-	// lookup flags in global flag set and re-register the values with our flagset
-	global := pflag.CommandLine
-	local := pflag.NewFlagSet(os.Args[0], pflag.ExitOnError)
-
-	// TODO(#58034): This is not a static file, so it's not quite as straightforward as --google-json-key.
-	// We need to figure out how ACR users can dynamically provide pull credentials before we can deprecate this.
-	pflagRegister(global, local, "azure-container-registry-config")
-
-	fs.AddFlagSet(local)
 }
 
 // addGlogFlags adds flags from github.com/golang/glog

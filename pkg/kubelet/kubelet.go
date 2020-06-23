@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -82,6 +83,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/metrics/collectors"
 	"k8s.io/kubernetes/pkg/kubelet/network/dns"
 	"k8s.io/kubernetes/pkg/kubelet/nodelease"
+	"k8s.io/kubernetes/pkg/kubelet/offlinemanager"
 	"k8s.io/kubernetes/pkg/kubelet/pleg"
 	kubepod "k8s.io/kubernetes/pkg/kubelet/pod"
 	"k8s.io/kubernetes/pkg/kubelet/preemption"
@@ -114,6 +116,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/oom"
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/csi"
+	"k8s.io/kubernetes/pkg/volume/edge_pv"
 	utilexec "k8s.io/utils/exec"
 )
 
@@ -257,6 +260,7 @@ type Dependencies struct {
 	DynamicPluginProber     volume.DynamicPluginProber
 	TLSOptions              *server.TLSOptions
 	KubeletConfigController *kubeletconfig.Controller
+	OfflineCache            offlinemanager.LocalCache
 }
 
 // makePodSourceConfig creates a config.PodConfig from the given
@@ -332,7 +336,6 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	hostnameOverride string,
 	nodeIP string,
 	providerID string,
-	cloudProvider string,
 	certDirectory string,
 	rootDirectory string,
 	registerNode bool,
@@ -444,7 +447,11 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	}
 	serviceLister := corelisters.NewServiceLister(serviceIndexer)
 
-	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	// It's important to use MetaNamespaceKeyFuncWithoutAccountId here.
+	// If nodes are indexed in the cache using a key like <accountid>/<node_name> like the default
+	// MetaNamespaceKeyFunc produces, this breaks the expectations of code that reads node info
+	// from the cache which expects node info to be indexed by just <node_name>
+	nodeIndexer := cache.NewIndexer(cache.MetaNamespaceKeyFuncWithoutAccountId, cache.Indexers{cache.AccountIDIndex: cache.MetaAccountIndexFunc, cache.AccountNamespaceIndex: cache.MetaAccountNamespaceIndexFunc, cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
 	if kubeDeps.KubeClient != nil {
 		fieldSelector := fields.Set{api.ObjectNameField: string(nodeName)}.AsSelector()
 		nodeLW := cache.NewListWatchFromClient(kubeDeps.KubeClient.CoreV1().RESTClient(), "nodes", metav1.NamespaceAll, fieldSelector)
@@ -506,7 +513,6 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		recorder:                                kubeDeps.Recorder,
 		cadvisor:                                kubeDeps.CAdvisorInterface,
 		cloud:                                   kubeDeps.Cloud,
-		externalCloudProvider:                   cloudprovider.IsExternal(cloudProvider),
 		providerID:                              providerID,
 		nodeRef:                                 nodeRef,
 		nodeLabels:                              nodeLabels,
@@ -730,7 +736,15 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	klet.containerDeletor = newPodContainerDeletor(klet.containerRuntime, integer.IntMax(containerGCPolicy.MaxPerPodContainer, minDeadContainerInPod))
 
 	// setup imageManager
-	imageManager, err := images.NewImageGCManager(klet.containerRuntime, klet.StatsProvider, kubeDeps.Recorder, nodeRef, imageGCPolicy, crOptions.PodSandboxImage)
+	var listProtectedImageTags func() ([]string, error)
+
+	if kubeDeps.OfflineCache != nil {
+		listProtectedImageTags = func() ([]string, error) {
+			return offlinemanager.ListImageTags(string(nodeName), kubeDeps.OfflineCache)
+		}
+	}
+
+	imageManager, err := images.NewImageGCManager(klet.containerRuntime, klet.StatsProvider, kubeDeps.Recorder, nodeRef, imageGCPolicy, crOptions.PodSandboxImage, listProtectedImageTags)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize image manager: %v", err)
 	}
@@ -2201,7 +2215,16 @@ func (kl *Kubelet) ResyncInterval() time.Duration {
 
 // ListenAndServe runs the kubelet HTTP server.
 func (kl *Kubelet) ListenAndServe(address net.IP, port uint, tlsOptions *server.TLSOptions, auth server.AuthInterface, enableDebuggingHandlers, enableContentionProfiling bool) {
-	server.ListenAndServeKubeletServer(kl, kl.resourceAnalyzer, address, port, tlsOptions, auth, enableDebuggingHandlers, enableContentionProfiling, kl.redirectContainerStreaming, kl.criHandler)
+	enableEdgePV := true
+	plugin, err := kl.volumePluginMgr.FindPluginByName(edge_pv.EdgePVPluginName)
+
+	if err != nil {
+		glog.Errorf("Could not find edge-pv plugin %s: %s", edge_pv.EdgePVPluginName, err.Error())
+
+		enableEdgePV = false
+	}
+
+	server.ListenAndServeKubeletServer(kl, kl.resourceAnalyzer, address, port, tlsOptions, auth, plugin, enableEdgePV, enableDebuggingHandlers, enableContentionProfiling, kl.redirectContainerStreaming, kl.criHandler)
 }
 
 // ListenAndServeReadOnly runs the kubelet HTTP server in read-only mode.

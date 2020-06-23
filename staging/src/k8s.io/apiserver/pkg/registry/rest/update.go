@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,6 +31,7 @@ import (
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/features"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 )
 
 // RESTUpdateStrategy defines the minimum validation, accepted input, and
@@ -96,6 +98,9 @@ func BeforeUpdate(strategy RESTUpdateStrategy, ctx context.Context, obj, old run
 	} else if len(objectMeta.GetNamespace()) > 0 {
 		objectMeta.SetNamespace(metav1.NamespaceNone)
 	}
+
+	accountid := genericapirequest.AccountIDValue(ctx)
+	objectMeta.SetAccountID(accountid)
 
 	// Ensure requests cannot update generation
 	oldMeta, err := meta.Accessor(old)
@@ -262,6 +267,7 @@ func AdmissionToValidateObjectUpdateFunc(admit admission.Interface, staticAttrib
 			obj,
 			old,
 			staticAttributes.GetKind(),
+			staticAttributes.GetAccountID(),
 			staticAttributes.GetNamespace(),
 			staticAttributes.GetName(),
 			staticAttributes.GetResource(),

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Copyright 2018-2020, Arm Limited and affiliates.
 # Copyright 2014 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -100,7 +101,7 @@ kube::log::error_exit() {
 
 # Log an error but keep going.  Don't dump the stack or exit.
 kube::log::error() {
-  timestamp=$(date +"[%m%d %H:%M:%S]")
+  timestamp=$(date -u +"[%m%d %H:%M:%S]")
   echo "!!! $timestamp ${1-}" >&2
   shift
   for message; do
@@ -162,7 +163,7 @@ kube::log::status() {
     return
   fi
 
-  timestamp=$(date +"[%m%d %H:%M:%S]")
+  timestamp=$(date -u +"[%m%d %H:%M:%S]")
   echo "+++ $timestamp $1"
   shift
   for message; do

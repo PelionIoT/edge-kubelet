@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,6 +26,9 @@ import (
 	appsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	appsv1beta1 "k8s.io/client-go/kubernetes/typed/apps/v1beta1"
 	appsv1beta2 "k8s.io/client-go/kubernetes/typed/apps/v1beta2"
+	argusv1 "k8s.io/client-go/kubernetes/typed/argus/v1"
+	argusappsv1 "k8s.io/client-go/kubernetes/typed/argus/apps/v1"
+	argusnetv1 "k8s.io/client-go/kubernetes/typed/argus/networking/v1"
 	auditregistrationv1alpha1 "k8s.io/client-go/kubernetes/typed/auditregistration/v1alpha1"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	authenticationv1beta1 "k8s.io/client-go/kubernetes/typed/authentication/v1beta1"
@@ -101,6 +105,10 @@ type Interface interface {
 	// Deprecated: please explicitly pick a version if possible.
 	Events() eventsv1beta1.EventsV1beta1Interface
 	ExtensionsV1beta1() extensionsv1beta1.ExtensionsV1beta1Interface
+	//Argus extension to support multitenancy
+	ArgusV1() argusv1.ArgusV1Interface
+	ArgusAppsV1() argusappsv1.ArgusAppsV1Interface
+	ArgusNetworkingV1() argusnetv1.ArgusNetworkingV1Interface
 	// Deprecated: please explicitly pick a version if possible.
 	Extensions() extensionsv1beta1.ExtensionsV1beta1Interface
 	NetworkingV1() networkingv1.NetworkingV1Interface
@@ -153,6 +161,9 @@ type Clientset struct {
 	coreV1                        *corev1.CoreV1Client
 	eventsV1beta1                 *eventsv1beta1.EventsV1beta1Client
 	extensionsV1beta1             *extensionsv1beta1.ExtensionsV1beta1Client
+	argusV1                       *argusv1.ArgusV1Client
+	argusappsV1                   *argusappsv1.ArgusAppsV1Client
+	argusnetV1                    *argusnetv1.ArgusNetworkingV1Client
 	networkingV1                  *networkingv1.NetworkingV1Client
 	policyV1beta1                 *policyv1beta1.PolicyV1beta1Client
 	rbacV1                        *rbacv1.RbacV1Client
@@ -335,6 +346,18 @@ func (c *Clientset) Events() eventsv1beta1.EventsV1beta1Interface {
 // ExtensionsV1beta1 retrieves the ExtensionsV1beta1Client
 func (c *Clientset) ExtensionsV1beta1() extensionsv1beta1.ExtensionsV1beta1Interface {
 	return c.extensionsV1beta1
+}
+
+func (c *Clientset) ArgusV1() argusv1.ArgusV1Interface {
+	return c.argusV1
+}
+
+func (c *Clientset) ArgusAppsV1() argusappsv1.ArgusAppsV1Interface {
+	return c.argusappsV1
+}
+
+func (c *Clientset) ArgusNetworkingV1() argusnetv1.ArgusNetworkingV1Interface {
+	return c.argusnetV1
 }
 
 // Deprecated: Extensions retrieves the default version of ExtensionsClient.
@@ -534,6 +557,18 @@ func NewForConfig(c *rest.Config) (*Clientset, error) {
 	if err != nil {
 		return nil, err
 	}
+	cs.argusV1, err = argusv1.NewForConfig(&configShallowCopy)
+	if err != nil {
+		return nil, err
+	}
+	cs.argusappsV1, err = argusappsv1.NewForConfig(&configShallowCopy)
+	if err != nil {
+		return nil, err
+	}
+	cs.argusnetV1, err = argusnetv1.NewForConfig(&configShallowCopy)
+	if err != nil {
+		return nil, err
+	}
 	cs.networkingV1, err = networkingv1.NewForConfig(&configShallowCopy)
 	if err != nil {
 		return nil, err
@@ -611,6 +646,9 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 	cs.coreV1 = corev1.NewForConfigOrDie(c)
 	cs.eventsV1beta1 = eventsv1beta1.NewForConfigOrDie(c)
 	cs.extensionsV1beta1 = extensionsv1beta1.NewForConfigOrDie(c)
+	cs.argusV1 = argusv1.NewForConfigOrDie(c)
+	cs.argusappsV1 = argusappsv1.NewForConfigOrDie(c)
+	cs.argusnetV1 = argusnetv1.NewForConfigOrDie(c)
 	cs.networkingV1 = networkingv1.NewForConfigOrDie(c)
 	cs.policyV1beta1 = policyv1beta1.NewForConfigOrDie(c)
 	cs.rbacV1 = rbacv1.NewForConfigOrDie(c)
@@ -651,6 +689,9 @@ func New(c rest.Interface) *Clientset {
 	cs.coreV1 = corev1.New(c)
 	cs.eventsV1beta1 = eventsv1beta1.New(c)
 	cs.extensionsV1beta1 = extensionsv1beta1.New(c)
+	cs.argusV1 = argusv1.New(c)
+	cs.argusappsV1 = argusappsv1.New(c)
+	cs.argusnetV1 = argusnetv1.New(c)
 	cs.networkingV1 = networkingv1.New(c)
 	cs.policyV1beta1 = policyv1beta1.New(c)
 	cs.rbacV1 = rbacv1.New(c)

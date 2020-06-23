@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2016 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -118,10 +119,12 @@ func (m *BaseControllerRefManager) ClaimObject(obj metav1.Object, match func(met
 	return true, nil
 }
 
+type PatchPodFunction func(pod *v1.Pod, patch string) error
+
 type PodControllerRefManager struct {
 	BaseControllerRefManager
 	controllerKind schema.GroupVersionKind
-	podControl     PodControlInterface
+	patchPod       PatchPodFunction
 }
 
 // NewPodControllerRefManager returns a PodControllerRefManager that exposes
@@ -136,7 +139,7 @@ type PodControllerRefManager struct {
 //       PodControllerRefManager instance. Create a new instance if it makes
 //       sense to check CanAdopt() again (e.g. in a different sync pass).
 func NewPodControllerRefManager(
-	podControl PodControlInterface,
+	patchPod PatchPodFunction,
 	controller metav1.Object,
 	selector labels.Selector,
 	controllerKind schema.GroupVersionKind,
@@ -149,7 +152,7 @@ func NewPodControllerRefManager(
 			CanAdoptFunc: canAdopt,
 		},
 		controllerKind: controllerKind,
-		podControl:     podControl,
+		patchPod:       patchPod,
 	}
 }
 
@@ -217,7 +220,8 @@ func (m *PodControllerRefManager) AdoptPod(pod *v1.Pod) error {
 		`{"metadata":{"ownerReferences":[{"apiVersion":"%s","kind":"%s","name":"%s","uid":"%s","controller":true,"blockOwnerDeletion":true}],"uid":"%s"}}`,
 		m.controllerKind.GroupVersion(), m.controllerKind.Kind,
 		m.Controller.GetName(), m.Controller.GetUID(), pod.UID)
-	return m.podControl.PatchPod(pod.Namespace, pod.Name, []byte(addControllerPatch))
+	glog.Infof("PodControllerRefMAnager ApodtPod\n")
+	return m.patchPod(pod, addControllerPatch)
 }
 
 // ReleasePod sends a patch to free the pod from the control of the controller.
@@ -226,7 +230,7 @@ func (m *PodControllerRefManager) ReleasePod(pod *v1.Pod) error {
 	glog.V(2).Infof("patching pod %s_%s to remove its controllerRef to %s/%s:%s",
 		pod.Namespace, pod.Name, m.controllerKind.GroupVersion(), m.controllerKind.Kind, m.Controller.GetName())
 	deleteOwnerRefPatch := fmt.Sprintf(`{"metadata":{"ownerReferences":[{"$patch":"delete","uid":"%s"}],"uid":"%s"}}`, m.Controller.GetUID(), pod.UID)
-	err := m.podControl.PatchPod(pod.Namespace, pod.Name, []byte(deleteOwnerRefPatch))
+	err := m.patchPod(pod, deleteOwnerRefPatch)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// If the pod no longer exists, ignore it.

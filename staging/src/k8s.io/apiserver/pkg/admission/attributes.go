@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +30,7 @@ import (
 
 type attributesRecord struct {
 	kind        schema.GroupVersionKind
+	accountid   string
 	namespace   string
 	name        string
 	resource    schema.GroupVersionResource
@@ -45,9 +47,10 @@ type attributesRecord struct {
 	annotationsLock sync.RWMutex
 }
 
-func NewAttributesRecord(object runtime.Object, oldObject runtime.Object, kind schema.GroupVersionKind, namespace, name string, resource schema.GroupVersionResource, subresource string, operation Operation, dryRun bool, userInfo user.Info) Attributes {
+func NewAttributesRecord(object runtime.Object, oldObject runtime.Object, kind schema.GroupVersionKind, accountid, namespace, name string, resource schema.GroupVersionResource, subresource string, operation Operation, dryRun bool, userInfo user.Info) Attributes {
 	return &attributesRecord{
 		kind:        kind,
+		accountid:   accountid,
 		namespace:   namespace,
 		name:        name,
 		resource:    resource,
@@ -62,6 +65,10 @@ func NewAttributesRecord(object runtime.Object, oldObject runtime.Object, kind s
 
 func (record *attributesRecord) GetKind() schema.GroupVersionKind {
 	return record.kind
+}
+
+func (record *attributesRecord) GetAccountID() string {
+	return record.accountid
 }
 
 func (record *attributesRecord) GetNamespace() string {

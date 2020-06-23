@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,6 +73,68 @@ func ListAllByNamespace(indexer Indexer, namespace string, selector labels.Selec
 
 		}
 		return nil
+	}
+	for _, m := range items {
+		metadata, err := meta.Accessor(m)
+		if err != nil {
+			return err
+		}
+		if selector.Matches(labels.Set(metadata.GetLabels())) {
+			appendFn(m)
+		}
+	}
+
+	return nil
+}
+
+func ListAllByAccount(indexer Indexer, aid string, selector labels.Selector, appendFn AppendFunc) error {
+	var items []interface{}
+	var err error
+	// aid == all && ns == all
+	if aid == metav1.AccountIDAll {
+		items = indexer.List()
+	} else {
+		// aid specidic and namespace specific
+		items, err = indexer.Index(AccountIDIndex, &metav1.ObjectMeta{AccountID: aid})
+	}
+
+	if err != nil {
+		glog.Warningf("can not retrieve list of objects using index : %v", err)
+		return err
+	}
+	for _, m := range items {
+		metadata, err := meta.Accessor(m)
+		if err != nil {
+			return err
+		}
+		if selector.Matches(labels.Set(metadata.GetLabels())) {
+			appendFn(m)
+		}
+	}
+
+	return nil
+}
+
+func ListAllByAccountNamespace(indexer Indexer, aid string, namespace string, selector labels.Selector, appendFn AppendFunc) error {
+	var items []interface{}
+	var err error
+	// aid == all && ns == all
+	if aid == metav1.AccountIDAll && namespace == metav1.NamespaceAll {
+		items = indexer.List()
+	} else if namespace == metav1.NamespaceAll {
+		// aid != all && ns == all
+		items, err = indexer.Index(AccountIDIndex, &metav1.ObjectMeta{AccountID: aid})
+	} else if aid == metav1.AccountIDAll {
+		// aid == all && ns != all
+		items, err = indexer.Index(NamespaceIndex, &metav1.ObjectMeta{Namespace: namespace})
+	} else {
+		// aid specidic and namespace specific
+		items, err = indexer.Index(AccountNamespaceIndex, &metav1.ObjectMeta{AccountID: aid, Namespace: namespace})
+	}
+
+	if err != nil {
+		glog.Warningf("can not retrieve list of objects using index : %v", err)
+		return err
 	}
 	for _, m := range items {
 		metadata, err := meta.Accessor(m)

@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,7 +39,32 @@ import (
 	"k8s.io/apiserver/pkg/util/dryrun"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	utiltrace "k8s.io/apiserver/pkg/util/trace"
+	utilheaders "k8s.io/apiserver/pkg/util/headers"
+
+	"github.com/golang/glog"
 )
+
+func inBlacklist(kind string) bool {
+	switch kind {
+	// These are disabled because we do not support
+	//  a scheduler, and these treat nodes as fungible
+	//  instead of specific.
+	case
+		"HorizontalPodAutoscaler",
+		"Deployment",
+		"ReplicaSet",
+		"StatefulSet":
+		return true
+	// These are disabled because we do not support
+	//  using Argus as part of the active control plane
+	//  and can make no guarantees about connectivity to nodes.
+	case
+		"Job",
+		"CronJob":
+		return true
+	}
+	return false
+}
 
 func createHandler(r rest.NamedCreater, scope RequestScope, admit admission.Interface, includeName bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
@@ -54,12 +80,13 @@ func createHandler(r rest.NamedCreater, scope RequestScope, admit admission.Inte
 		// TODO: we either want to remove timeout or document it (if we document, move timeout out of this function and declare it in api_installer)
 		timeout := parseTimeout(req.URL.Query().Get("timeout"))
 
+		// We can't get accountid from the URL, so don't bother trying.
 		var (
-			namespace, name string
-			err             error
+			accountid, namespace, name string
+			err                        error
 		)
 		if includeName {
-			namespace, name, err = scope.Namer.Name(req)
+			_, namespace, name, err = scope.Namer.Name(req)
 		} else {
 			namespace, err = scope.Namer.Namespace(req)
 		}
@@ -67,9 +94,11 @@ func createHandler(r rest.NamedCreater, scope RequestScope, admit admission.Inte
 			scope.err(err, w, req)
 			return
 		}
+		accountid = utilheaders.ExtractAccountID(req, "create")
 
 		ctx := req.Context()
 		ctx = request.WithNamespace(ctx, namespace)
+		ctx = request.WithAccountID(ctx, accountid)
 
 		gv := scope.Kind.GroupVersion()
 		s, err := negotiation.NegotiateInputSerializer(req, false, scope.Serializer)
@@ -114,12 +143,19 @@ func createHandler(r rest.NamedCreater, scope RequestScope, admit admission.Inte
 		}
 		trace.Step("Conversion done")
 
+		// Argus creation blacklist for unsupported types.
+		if inBlacklist(gvk.Kind) {
+			glog.Errorf("Denying object due to blacklist status: %s/%s/%s, %#v", accountid, namespace, name, gvk)
+			scope.err(errors.NewMethodNotSupported(scope.Resource.GroupResource(), "post"), w, req)
+			return
+		}
+
 		ae := request.AuditEventFrom(ctx)
 		admit = admission.WithAudit(admit, ae)
 		audit.LogRequestObject(ae, obj, scope.Resource, scope.Subresource, scope.Serializer)
 
 		userInfo, _ := request.UserFrom(ctx)
-		admissionAttributes := admission.NewAttributesRecord(obj, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Create, dryrun.IsDryRun(options.DryRun), userInfo)
+		admissionAttributes := admission.NewAttributesRecord(obj, nil, scope.Kind, accountid, namespace, name, scope.Resource, scope.Subresource, admission.Create, dryrun.IsDryRun(options.DryRun), userInfo)
 		if mutatingAdmission, ok := admit.(admission.MutationInterface); ok && mutatingAdmission.Handles(admission.Create) {
 			err = mutatingAdmission.Admit(admissionAttributes)
 			if err != nil {

@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +34,8 @@ type Attributes interface {
 	GetName() string
 	// GetNamespace is the namespace associated with the request (if any)
 	GetNamespace() string
+	// GetAccountID is the accountid associated with the request (if any)
+	GetAccountID() string
 	// GetResource is the name of the resource being requested.  This is not the kind.  For example: pods
 	GetResource() schema.GroupVersionResource
 	// GetSubresource is the name of the subresource being requested.  This is a different resource, scoped to the parent resource, but it may have a different kind.

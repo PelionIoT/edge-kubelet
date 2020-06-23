@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -45,6 +46,7 @@ import (
 	"k8s.io/apiserver/pkg/util/dryrun"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	utiltrace "k8s.io/apiserver/pkg/util/trace"
+	utilheaders "k8s.io/apiserver/pkg/util/headers"
 )
 
 // PatchResource returns a function that will handle a resource patch.
@@ -79,14 +81,16 @@ func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface
 		// api_installer)
 		timeout := parseTimeout(req.URL.Query().Get("timeout"))
 
-		namespace, name, err := scope.Namer.Name(req)
+		accountid, namespace, name, err := scope.Namer.Name(req)
 		if err != nil {
 			scope.err(err, w, req)
 			return
 		}
+		accountid = utilheaders.ExtractAccountID(req, "patch")
 
 		ctx := req.Context()
 		ctx = request.WithNamespace(ctx, namespace)
+		ctx = request.WithAccountID(ctx, accountid)
 
 		patchJS, err := readBody(req)
 		if err != nil {
@@ -129,6 +133,7 @@ func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface
 			nil,
 			nil,
 			scope.Kind,
+			accountid,
 			namespace,
 			name,
 			scope.Resource,
@@ -144,6 +149,7 @@ func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface
 					updatedObject,
 					currentObject,
 					scope.Kind,
+					accountid,
 					namespace,
 					name,
 					scope.Resource,
@@ -243,6 +249,7 @@ type patcher struct {
 	trace *utiltrace.Trace
 
 	// Set at invocation-time (by applyPatch) and immutable thereafter
+	accountid         string
 	namespace         string
 	updatedObjectInfo rest.UpdatedObjectInfo
 	mechanism         patchMechanism
@@ -368,7 +375,7 @@ func (p *patcher) applyPatch(_ context.Context, _, currentObject runtime.Object)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkName(objToUpdate, p.name, p.namespace, p.namer); err != nil {
+	if err := checkName(objToUpdate, p.name, p.namespace, p.accountid, p.namer); err != nil {
 		return nil, err
 	}
 	return objToUpdate, nil
@@ -383,6 +390,7 @@ func (p *patcher) applyAdmission(ctx context.Context, patchedObject runtime.Obje
 
 // patchResource divides PatchResource for easier unit testing
 func (p *patcher) patchResource(ctx context.Context) (runtime.Object, error) {
+	p.accountid = request.AccountIDValue(ctx)
 	p.namespace = request.NamespaceValue(ctx)
 	switch p.patchType {
 	case types.JSONPatchType, types.MergePatchType:

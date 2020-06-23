@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -222,6 +223,8 @@ type SelfLinker interface {
 	Name(obj Object) (string, error)
 	// Knowing Namespace is sometimes necessary to use a SelfLinker
 	Namespace(obj Object) (string, error)
+	// Knowing AccountID is sometimes necessary to use a SelfLinker
+	AccountID(obj Object) (string, error)
 }
 
 // Object interface must be supported by all API types registered with Scheme. Since objects in a scheme are

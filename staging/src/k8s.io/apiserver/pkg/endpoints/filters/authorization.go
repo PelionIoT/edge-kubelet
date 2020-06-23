@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2016 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,9 +26,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/audit"
+	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"k8s.io/apiserver/pkg/endpoints/handlers/responsewriters"
 	"k8s.io/apiserver/pkg/endpoints/request"
+	utilheaders "k8s.io/apiserver/pkg/util/headers"
 )
 
 const (
@@ -56,6 +59,33 @@ func WithAuthorization(handler http.Handler, a authorizer.Authorizer, s runtime.
 			responsewriters.InternalError(w, req, err)
 			return
 		}
+
+		//TODO argus:
+		// Could get this (and aid) onto context earlier in the handler chain
+		//  rather than injecting here, and let GetAuthorizerAttributes set the
+		//  nodename at creation instead of overwriting.
+		nodeName := utilheaders.ExtractNodename(req)
+		if nodeName != "" {
+			attrs := authorizer.AttributesRecord{
+				User:            &user.DefaultInfo{
+							Name:   "system:node:"+nodeName,
+							Groups: []string{user.NodesGroup},
+						 },
+				Verb:            attributes.GetVerb(),
+				AccountID:       attributes.GetAccountID(),
+				Namespace:       attributes.GetNamespace(),
+				APIGroup:        attributes.GetAPIGroup(),
+				APIVersion:      attributes.GetAPIVersion(),
+				Resource:        attributes.GetResource(),
+				Subresource:     attributes.GetSubresource(),
+				Name:            attributes.GetName(),
+				ResourceRequest: attributes.IsResourceRequest(),
+				Path:            attributes.GetPath(),
+			}
+
+			attributes = attrs
+		}
+
 		authorized, reason, err := a.Authorize(attributes)
 		// an authorizer like RBAC could encounter evaluation errors and still allow the request, so authorizer decision is checked before error here.
 		if authorized == authorizer.DecisionAllow {
@@ -99,6 +129,7 @@ func GetAuthorizerAttributes(ctx context.Context) (authorizer.Attributes, error)
 	attribs.APIVersion = requestInfo.APIVersion
 	attribs.Resource = requestInfo.Resource
 	attribs.Subresource = requestInfo.Subresource
+	attribs.AccountID = requestInfo.AccountID
 	attribs.Namespace = requestInfo.Namespace
 	attribs.Name = requestInfo.Name
 

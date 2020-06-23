@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,13 +62,13 @@ func NewFilteredDaemonSetInformer(client kubernetes.Interface, namespace string,
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AppsV1().DaemonSets(namespace).List(options)
+				return client.ArgusAppsV1().DaemonSets(metav1.AccountIDAll, namespace).List(options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AppsV1().DaemonSets(namespace).Watch(options)
+				return client.ArgusAppsV1().DaemonSets(metav1.AccountIDAll, namespace).Watch(options)
 			},
 		},
 		&appsv1.DaemonSet{},
@@ -77,7 +78,7 @@ func NewFilteredDaemonSetInformer(client kubernetes.Interface, namespace string,
 }
 
 func (f *daemonSetInformer) defaultInformer(client kubernetes.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredDaemonSetInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+	return NewFilteredDaemonSetInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.AccountIDIndex: cache.MetaAccountIndexFunc, cache.AccountNamespaceIndex: cache.MetaAccountNamespaceIndexFunc, cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
 func (f *daemonSetInformer) Informer() cache.SharedIndexInformer {

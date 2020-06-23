@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,15 +29,18 @@ import (
 
 // ScopeNamer handles accessing names from requests and objects
 type ScopeNamer interface {
+	// AccountID returns the correct accountid value from the request. It is always an error
+	// for a request to not have an accountid.
+	AccountID(req *http.Request) (accountid string, err error)
 	// Namespace returns the appropriate namespace value from the request (may be empty) or an
 	// error.
 	Namespace(req *http.Request) (namespace string, err error)
 	// Name returns the name from the request, and an optional namespace value if this is a namespace
 	// scoped call. An error is returned if the name is not available.
-	Name(req *http.Request) (namespace, name string, err error)
+	Name(req *http.Request) (accountid, namespace, name string, err error)
 	// ObjectName returns the namespace and name from an object if they exist, or an error if the object
 	// does not support names.
-	ObjectName(obj runtime.Object) (namespace, name string, err error)
+	ObjectName(obj runtime.Object) (accountid, namespace, name string, err error)
 	// SetSelfLink sets the provided URL onto the object. The method should return nil if the object
 	// does not support selfLinks.
 	SetSelfLink(obj runtime.Object, url string) error
@@ -62,6 +66,14 @@ func (n ContextBasedNaming) SetSelfLink(obj runtime.Object, url string) error {
 	return n.SelfLinker.SetSelfLink(obj, url)
 }
 
+func (n ContextBasedNaming) AccountID(req *http.Request) (accountid string, err error) {
+	requestInfo, ok := request.RequestInfoFrom(req.Context())
+	if !ok {
+		return "", fmt.Errorf("missing requestInfo")
+	}
+	return requestInfo.AccountID, nil
+}
+
 func (n ContextBasedNaming) Namespace(req *http.Request) (namespace string, err error) {
 	requestInfo, ok := request.RequestInfoFrom(req.Context())
 	if !ok {
@@ -70,24 +82,28 @@ func (n ContextBasedNaming) Namespace(req *http.Request) (namespace string, err 
 	return requestInfo.Namespace, nil
 }
 
-func (n ContextBasedNaming) Name(req *http.Request) (namespace, name string, err error) {
+func (n ContextBasedNaming) Name(req *http.Request) (accountid, namespace, name string, err error) {
 	requestInfo, ok := request.RequestInfoFrom(req.Context())
 	if !ok {
-		return "", "", fmt.Errorf("missing requestInfo")
+		return "", "", "", fmt.Errorf("missing requestInfo")
+	}
+	aid, err := n.AccountID(req)
+	if err != nil {
+		return "", "", "", err
 	}
 	ns, err := n.Namespace(req)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	if len(requestInfo.Name) == 0 {
-		return "", "", errEmptyName
+		return "", "", "", errEmptyName
 	}
-	return ns, requestInfo.Name, nil
+	return aid, ns, requestInfo.Name, nil
 }
 
 func (n ContextBasedNaming) GenerateLink(requestInfo *request.RequestInfo, obj runtime.Object) (uri string, err error) {
-	namespace, name, err := n.ObjectName(obj)
+	_, namespace, name, err := n.ObjectName(obj)
 	if err == errEmptyName && len(requestInfo.Name) > 0 {
 		name = requestInfo.Name
 	} else if err != nil {
@@ -116,19 +132,23 @@ func (n ContextBasedNaming) GenerateListLink(req *http.Request) (uri string, err
 	return req.URL.EscapedPath(), nil
 }
 
-func (n ContextBasedNaming) ObjectName(obj runtime.Object) (namespace, name string, err error) {
+func (n ContextBasedNaming) ObjectName(obj runtime.Object) (accountid, namespace, name string, err error) {
 	name, err = n.SelfLinker.Name(obj)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if len(name) == 0 {
-		return "", "", errEmptyName
+		return "", "", "", errEmptyName
+	}
+	accountid, err = n.SelfLinker.AccountID(obj)
+	if err != nil {
+		return "", "", "", err
 	}
 	namespace, err = n.SelfLinker.Namespace(obj)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	return namespace, name, err
+	return accountid, namespace, name, err
 }
 
 // errEmptyName is returned when API requests do not fill the name section of the path.

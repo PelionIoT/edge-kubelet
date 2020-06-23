@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -464,6 +465,25 @@ type RealPodControl struct {
 	Recorder   record.EventRecorder
 }
 
+type PodWithAccountIdControlInterface interface {
+	// CreatePods creates new pods according to the spec.
+	CreatePods(aid, namespace string, template *v1.PodTemplateSpec, object runtime.Object) error
+	// CreatePodsOnNode creates a new pod according to the spec on the specified node,
+	// and sets the ControllerRef.
+	CreatePodsOnNode(nodeName, aid, namespace string, template *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error
+	// CreatePodsWithControllerRef creates new pods according to the spec, and sets object as the pod's controller.
+	CreatePodsWithControllerRef(aid, namespace string, template *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error
+	// DeletePod deletes the pod identified by podID.
+	DeletePod(aid, namespace string, podID string, object runtime.Object) error
+	// PatchPod patches the pod.
+	PatchPod(aid, namespace, name string, data []byte) error
+}
+
+type RealPodWithAccountIdControl struct {
+	KubeClient clientset.Interface
+	Recorder   record.EventRecorder
+}
+
 var _ PodControlInterface = &RealPodControl{}
 
 func getPodsLabelSet(template *v1.PodTemplateSpec) labels.Set {
@@ -520,11 +540,22 @@ func (r RealPodControl) CreatePods(namespace string, template *v1.PodTemplateSpe
 	return r.createPods("", namespace, template, object, nil)
 }
 
+func (r RealPodWithAccountIdControl) CreatePods(aid, namespace string, template *v1.PodTemplateSpec, object runtime.Object) error {
+	return r.createPods("", aid, namespace, template, object, nil)
+}
+
 func (r RealPodControl) CreatePodsWithControllerRef(namespace string, template *v1.PodTemplateSpec, controllerObject runtime.Object, controllerRef *metav1.OwnerReference) error {
 	if err := validateControllerRef(controllerRef); err != nil {
 		return err
 	}
 	return r.createPods("", namespace, template, controllerObject, controllerRef)
+}
+
+func (r RealPodWithAccountIdControl) CreatePodsWithControllerRef(aid, namespace string, template *v1.PodTemplateSpec, controllerObject runtime.Object, controllerRef *metav1.OwnerReference) error {
+	if err := validateControllerRef(controllerRef); err != nil {
+		return err
+	}
+	return r.createPods("", aid, namespace, template, controllerObject, controllerRef)
 }
 
 func (r RealPodControl) CreatePodsOnNode(nodeName, namespace string, template *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error {
@@ -534,8 +565,20 @@ func (r RealPodControl) CreatePodsOnNode(nodeName, namespace string, template *v
 	return r.createPods(nodeName, namespace, template, object, controllerRef)
 }
 
+func (r RealPodWithAccountIdControl) CreatePodsOnNode(nodeName, aid, namespace string, template *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error {
+	if err := validateControllerRef(controllerRef); err != nil {
+		return err
+	}
+	return r.createPods(nodeName, aid, namespace, template, object, controllerRef)
+}
+
 func (r RealPodControl) PatchPod(namespace, name string, data []byte) error {
 	_, err := r.KubeClient.CoreV1().Pods(namespace).Patch(name, types.StrategicMergePatchType, data)
+	return err
+}
+
+func (r RealPodWithAccountIdControl) PatchPod(aid, namespace, name string, data []byte) error {
+	_, err := r.KubeClient.ArgusV1().Pods(aid, namespace).Patch(name, types.StrategicMergePatchType, data)
 	return err
 }
 
@@ -548,6 +591,7 @@ func GetPodFromTemplate(template *v1.PodTemplateSpec, parentObject runtime.Objec
 		return nil, fmt.Errorf("parentObject does not have ObjectMeta, %v", err)
 	}
 	prefix := getPodsPrefix(accessor.GetName())
+	aid := accessor.GetAccountID()
 
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -555,6 +599,7 @@ func GetPodFromTemplate(template *v1.PodTemplateSpec, parentObject runtime.Objec
 			Annotations:  desiredAnnotations,
 			GenerateName: prefix,
 			Finalizers:   desiredFinalizers,
+			AccountID:    aid,
 		},
 	}
 	if controllerRef != nil {
@@ -590,6 +635,34 @@ func (r RealPodControl) createPods(nodeName, namespace string, template *v1.PodT
 	return nil
 }
 
+func (r RealPodWithAccountIdControl) createPods(nodeName, aid, namespace string, template *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error {
+	pod, err := GetPodFromTemplate(template, object, controllerRef)
+	if err != nil {
+		return err
+	}
+	if len(nodeName) != 0 {
+		pod.Spec.NodeName = nodeName
+	}
+	if labels.Set(pod.Labels).AsSelectorPreValidated().Empty() {
+		return fmt.Errorf("unable to create pods, no labels")
+	}
+	glog.Infof("RealPodWithAccountIdControl createPods sending pod: %+v\n", pod)
+	if newPod, err := r.KubeClient.ArgusV1().Pods(aid, namespace).Create(pod); err != nil {
+		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedCreatePodReason, "Error creating: %v", err)
+		return err
+	} else {
+		accessor, err := meta.Accessor(object)
+		if err != nil {
+			glog.Errorf("parentObject does not have ObjectMeta, %v", err)
+			return nil
+		}
+		glog.Infof("Controller %v created pod %+v", accessor.GetName(), newPod)
+		glog.V(4).Infof("Controller %v created pod %v", accessor.GetName(), newPod.Name)
+		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulCreatePodReason, "Created pod: %v", newPod.Name)
+	}
+	return nil
+}
+
 func (r RealPodControl) DeletePod(namespace string, podID string, object runtime.Object) error {
 	accessor, err := meta.Accessor(object)
 	if err != nil {
@@ -597,6 +670,21 @@ func (r RealPodControl) DeletePod(namespace string, podID string, object runtime
 	}
 	glog.V(2).Infof("Controller %v deleting pod %v/%v", accessor.GetName(), namespace, podID)
 	if err := r.KubeClient.CoreV1().Pods(namespace).Delete(podID, nil); err != nil && !apierrors.IsNotFound(err) {
+		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
+		return fmt.Errorf("unable to delete pods: %v", err)
+	} else {
+		r.Recorder.Eventf(object, v1.EventTypeNormal, SuccessfulDeletePodReason, "Deleted pod: %v", podID)
+	}
+	return nil
+}
+
+func (r RealPodWithAccountIdControl) DeletePod(aid, namespace string, podID string, object runtime.Object) error {
+	accessor, err := meta.Accessor(object)
+	if err != nil {
+		return fmt.Errorf("object does not have ObjectMeta, %v", err)
+	}
+	glog.V(2).Infof("Controller %v deleting pod %v/%v", accessor.GetName(), namespace, podID)
+	if err := r.KubeClient.ArgusV1().Pods(aid, namespace).Delete(podID, nil); err != nil {
 		r.Recorder.Eventf(object, v1.EventTypeWarning, FailedDeletePodReason, "Error deleting: %v", err)
 		return fmt.Errorf("unable to delete pods: %v", err)
 	} else {
@@ -616,7 +704,13 @@ type FakePodControl struct {
 	CreateCallCount int
 }
 
+type FakePodWithAccountIdControl struct {
+	FakePodControl FakePodControl
+}
+
 var _ PodControlInterface = &FakePodControl{}
+
+var _ PodWithAccountIdControlInterface = &FakePodWithAccountIdControl{}
 
 func (f *FakePodControl) PatchPod(namespace, name string, data []byte) error {
 	f.Lock()
@@ -626,6 +720,10 @@ func (f *FakePodControl) PatchPod(namespace, name string, data []byte) error {
 		return f.Err
 	}
 	return nil
+}
+
+func (f *FakePodWithAccountIdControl) PatchPod(aid, namespace, name string, data []byte) error {
+	return f.FakePodControl.PatchPod(namespace, name, data)
 }
 
 func (f *FakePodControl) CreatePods(namespace string, spec *v1.PodTemplateSpec, object runtime.Object) error {
@@ -640,6 +738,10 @@ func (f *FakePodControl) CreatePods(namespace string, spec *v1.PodTemplateSpec, 
 		return f.Err
 	}
 	return nil
+}
+
+func (f *FakePodWithAccountIdControl) CreatePods(aid, namespace string, spec *v1.PodTemplateSpec, object runtime.Object) error {
+	return f.FakePodControl.CreatePods(namespace, spec, object)
 }
 
 func (f *FakePodControl) CreatePodsWithControllerRef(namespace string, spec *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error {
@@ -657,6 +759,10 @@ func (f *FakePodControl) CreatePodsWithControllerRef(namespace string, spec *v1.
 	return nil
 }
 
+func (f *FakePodWithAccountIdControl) CreatePodsWithControllerRef(aid, namespace string, spec *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error {
+	return f.FakePodControl.CreatePodsWithControllerRef(namespace, spec, object, controllerRef)
+}
+
 func (f *FakePodControl) CreatePodsOnNode(nodeName, namespace string, template *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error {
 	f.Lock()
 	defer f.Unlock()
@@ -672,6 +778,10 @@ func (f *FakePodControl) CreatePodsOnNode(nodeName, namespace string, template *
 	return nil
 }
 
+func (f *FakePodWithAccountIdControl) CreatePodsOnNode(nodeName, aid, namespace string, template *v1.PodTemplateSpec, object runtime.Object, controllerRef *metav1.OwnerReference) error {
+	return f.FakePodControl.CreatePodsOnNode(nodeName, namespace, template, object, controllerRef)
+}
+
 func (f *FakePodControl) DeletePod(namespace string, podID string, object runtime.Object) error {
 	f.Lock()
 	defer f.Unlock()
@@ -680,6 +790,10 @@ func (f *FakePodControl) DeletePod(namespace string, podID string, object runtim
 		return f.Err
 	}
 	return nil
+}
+
+func (f *FakePodWithAccountIdControl) DeletePod(aid, namespace string, podID string, object runtime.Object) error {
+	return f.FakePodControl.DeletePod(namespace, podID, object)
 }
 
 func (f *FakePodControl) Clear() {
@@ -691,6 +805,10 @@ func (f *FakePodControl) Clear() {
 	f.Patches = [][]byte{}
 	f.CreateLimit = 0
 	f.CreateCallCount = 0
+}
+
+func (f *FakePodWithAccountIdControl) Clear() {
+	f.FakePodControl.Clear()
 }
 
 // ByLogging allows custom sorting of pods so the best one can be picked for getting its logs.
@@ -1016,7 +1134,7 @@ func PatchNodeTaints(c clientset.Interface, nodeName string, oldNode *v1.Node, n
 		return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
 	}
 
-	_, err = c.CoreV1().Nodes().Patch(nodeName, types.StrategicMergePatchType, patchBytes)
+	_, err = c.ArgusV1().Nodes(newNode.AccountID).Patch(nodeName, types.StrategicMergePatchType, patchBytes)
 	return err
 }
 

@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,6 +36,9 @@ type Attributes interface {
 	// When IsReadOnly() == true, the request has no side effects, other than
 	// caching, logging, and other incidentals.
 	IsReadOnly() bool
+
+	// The accountid of the object, if a request is for a REST object.
+	GetAccountID() string
 
 	// The namespace of the object, if a request is for a REST object.
 	GetNamespace() string
@@ -91,6 +95,7 @@ type RequestAttributesGetter interface {
 type AttributesRecord struct {
 	User            user.Info
 	Verb            string
+	AccountID       string
 	Namespace       string
 	APIGroup        string
 	APIVersion      string
@@ -111,6 +116,10 @@ func (a AttributesRecord) GetVerb() string {
 
 func (a AttributesRecord) IsReadOnly() bool {
 	return a.Verb == "get" || a.Verb == "list" || a.Verb == "watch"
+}
+
+func (a AttributesRecord) GetAccountID() string {
+	return a.AccountID
 }
 
 func (a AttributesRecord) GetNamespace() string {

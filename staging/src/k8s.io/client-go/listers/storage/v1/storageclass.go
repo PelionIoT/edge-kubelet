@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,8 +30,10 @@ import (
 type StorageClassLister interface {
 	// List lists all StorageClasses in the indexer.
 	List(selector labels.Selector) (ret []*v1.StorageClass, err error)
+	ListInAccount(aid string, selector labels.Selector) (ret []*v1.StorageClass, err error)
 	// Get retrieves the StorageClass from the index for a given name.
 	Get(name string) (*v1.StorageClass, error)
+	GetInAccount(aid, name string) (*v1.StorageClass, error)
 	StorageClassListerExpansion
 }
 
@@ -52,9 +55,28 @@ func (s *storageClassLister) List(selector labels.Selector) (ret []*v1.StorageCl
 	return ret, err
 }
 
+func (s *storageClassLister) ListInAccount(aid string, selector labels.Selector) (ret []*v1.StorageClass, err error) {
+	err = cache.ListAllByAccount(s.indexer, aid, selector, func(m interface{}) {
+		ret = append(ret, m.(*v1.StorageClass))
+	})
+	return ret, err
+}
+
 // Get retrieves the StorageClass from the index for a given name.
 func (s *storageClassLister) Get(name string) (*v1.StorageClass, error) {
 	obj, exists, err := s.indexer.GetByKey(name)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.NewNotFound(v1.Resource("storageclass"), name)
+	}
+	return obj.(*v1.StorageClass), nil
+}
+
+func (s *storageClassLister) GetInAccount(aid, name string) (*v1.StorageClass, error) {
+	key := cache.CombineAidNamespaceName(aid, "", name)
+	obj, exists, err := s.indexer.GetByKey(key)
 	if err != nil {
 		return nil, err
 	}

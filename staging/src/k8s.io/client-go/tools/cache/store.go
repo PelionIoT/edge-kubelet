@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,6 +67,17 @@ func (k KeyError) Error() string {
 // the object but not the object itself.
 type ExplicitKey string
 
+func CombineAidNamespaceName(aid, ns, name string) string {
+	result := ""
+	if len(aid) > 0 {
+		result = aid + "/"
+	}
+	if len(ns) > 0 {
+		return result + ns + "/" + name
+	}
+	return result + name
+}
+
 // MetaNamespaceKeyFunc is a convenient default KeyFunc which knows how to make
 // keys for API objects which implement meta.Interface.
 // The key uses the format <namespace>/<name> unless <namespace> is empty, then
@@ -81,10 +93,26 @@ func MetaNamespaceKeyFunc(obj interface{}) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("object has no meta: %v", err)
 	}
-	if len(meta.GetNamespace()) > 0 {
-		return meta.GetNamespace() + "/" + meta.GetName(), nil
+	//TODO ARGUS: we actually need this check, but lets make the unit tests sane first
+	//	if len(meta.GetAccountID()) <= 0 {
+	//		return "", fmt.Errorf("object has not account id")
+	//	}
+	return CombineAidNamespaceName(meta.GetAccountID(), meta.GetNamespace(), meta.GetName()), nil
+}
+
+// This behaves much like the original Kubernetes codebase.
+// It ignores the account ID and produces a key using the format
+// <namespace>/<name> unless <namespace> is empty, in which case it's just <name>
+func MetaNamespaceKeyFuncWithoutAccountId(obj interface{}) (string, error) {
+	if key, ok := obj.(ExplicitKey); ok {
+		return string(key), nil
 	}
-	return meta.GetName(), nil
+	meta, err := meta.Accessor(obj)
+	if err != nil {
+		return "", fmt.Errorf("object has no meta: %v", err)
+	}
+	
+	return CombineAidNamespaceName("", meta.GetNamespace(), meta.GetName()), nil
 }
 
 // SplitMetaNamespaceKey returns the namespace and name that
@@ -92,18 +120,20 @@ func MetaNamespaceKeyFunc(obj interface{}) (string, error) {
 //
 // TODO: replace key-as-string with a key-as-struct so that this
 // packing/unpacking won't be necessary.
-func SplitMetaNamespaceKey(key string) (namespace, name string, err error) {
+func SplitMetaNamespaceKey(key string) (accountId, namespace, name string, err error) {
 	parts := strings.Split(key, "/")
 	switch len(parts) {
 	case 1:
-		// name only, no namespace
-		return "", parts[0], nil
+		return "", "", parts[0], nil
 	case 2:
-		// namespace and name
-		return parts[0], parts[1], nil
+		// accountId and name only, no namespace
+		return "", parts[0], parts[1], nil
+	case 3:
+		// accountId and namespace and name
+		return parts[0], parts[1], parts[2], nil
 	}
 
-	return "", "", fmt.Errorf("unexpected key format: %q", key)
+	return "", "", "", fmt.Errorf("unexpected key format: %q", key)
 }
 
 // cache responsibilities are limited to:

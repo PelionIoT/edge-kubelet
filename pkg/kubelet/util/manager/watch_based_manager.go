@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -82,7 +83,7 @@ func (c *objectCache) newStore() cache.Store {
 	// However, simple benchmarks show that memory overhead in that case is
 	// decrease from ~600B to ~300B per object. So we are not optimizing it
 	// until we will see a good reason for that.
-	return cache.NewStore(cache.MetaNamespaceKeyFunc)
+	return cache.NewStore(cache.MetaNamespaceKeyFuncWithoutAccountId)
 }
 
 func (c *objectCache) newReflector(namespace, name string) *objectCacheItem {

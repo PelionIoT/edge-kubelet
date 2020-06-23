@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
+	"k8s.io/kubernetes/pkg/volume/edge_pv"
 	"k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/pkg/volume/util/recyclerclient"
 	"k8s.io/kubernetes/pkg/volume/validation"
@@ -79,7 +81,9 @@ func (plugin *hostPathPlugin) GetVolumeName(spec *volume.Spec) (string, error) {
 }
 
 func (plugin *hostPathPlugin) CanSupport(spec *volume.Spec) bool {
-	return (spec.PersistentVolume != nil && spec.PersistentVolume.Spec.HostPath != nil) ||
+	// Checks the gateway annotation to ensure that there is no overlap between the the volumes
+	// that host_path and edge_pv plugins claim to support.
+	return (spec.PersistentVolume != nil && spec.PersistentVolume.Spec.HostPath != nil && !metav1.HasAnnotation(spec.PersistentVolume.ObjectMeta, edge_pv.AnnGateway)) ||
 		(spec.Volume != nil && spec.Volume.HostPath != nil)
 }
 

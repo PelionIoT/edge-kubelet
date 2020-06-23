@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -76,7 +77,7 @@ func NewFilteredNamespaceInformer(client kubernetes.Interface, resyncPeriod time
 }
 
 func (f *namespaceInformer) defaultInformer(client kubernetes.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredNamespaceInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+	return NewFilteredNamespaceInformer(client, resyncPeriod, cache.Indexers{cache.AccountIDIndex: cache.MetaAccountIndexFunc, cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
 func (f *namespaceInformer) Informer() cache.SharedIndexInformer {

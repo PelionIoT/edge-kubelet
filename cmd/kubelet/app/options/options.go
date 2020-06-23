@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -204,6 +205,12 @@ type KubeletFlags struct {
 	// hostIPCSources is a comma-separated list of sources from which the
 	// Kubelet allows pods to use the host ipc namespace. Defaults to "*".
 	HostIPCSources []string
+	// The address of the fog-proxy tunneling service
+	FogProxyAddress string
+	// Offline cache location
+	OfflineCachePath string
+	// Port to use for offline cache
+	OfflineCachePort int32
 }
 
 // NewKubeletFlags will create a new KubeletFlags with default values
@@ -239,6 +246,7 @@ func NewKubeletFlags() *KubeletFlags {
 		AllowPrivileged: true,
 		// prior to the introduction of this flag, there was a hardcoded cap of 50 images
 		NodeStatusMaxImages: 50,
+		OfflineCachePort:    10355,
 	}
 }
 
@@ -419,6 +427,10 @@ func (f *KubeletFlags) AddFlags(mainfs *pflag.FlagSet) {
 	fs.StringSliceVar(&f.HostIPCSources, "host-ipc-sources", f.HostIPCSources, "Comma-separated list of sources from which the Kubelet allows pods to use the host ipc namespace.")
 	fs.MarkDeprecated("host-ipc-sources", "will be removed in a future version")
 
+	// PELION FLAGS
+	fs.StringVar(&f.FogProxyAddress, "fog-proxy-address", f.FogProxyAddress, "")
+	fs.StringVar(&f.OfflineCachePath, "offline-cache-path", f.OfflineCachePath, "Path to the directory where resources are cached so Kubelet can remain running offline.")
+	fs.Int32Var(&f.OfflineCachePort, "offline-cache-port", f.OfflineCachePort, "Port to use for the offline cache proxy.")
 }
 
 // AddKubeletConfigFlags adds flags for a specific kubeletconfig.KubeletConfiguration to the specified FlagSet

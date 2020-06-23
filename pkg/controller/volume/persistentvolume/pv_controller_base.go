@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2016 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -216,7 +217,7 @@ func (ctrl *PersistentVolumeController) deleteVolume(volume *v1.PersistentVolume
 	// sync the claim when its volume is deleted. Explicitly syncing the
 	// claim here in response to volume deletion prevents the claim from
 	// waiting until the next sync period for its Lost status.
-	claimKey := claimrefToClaimKey(volume.Spec.ClaimRef)
+	claimKey := claimrefToClaimKey(volume.AccountID, volume.Spec.ClaimRef)
 	glog.V(5).Infof("deleteVolume[%s]: scheduling sync of claim %q", volume.Name, claimKey)
 	ctrl.claimQueue.Add(claimKey)
 }
@@ -259,7 +260,7 @@ func (ctrl *PersistentVolumeController) deleteClaim(claim *v1.PersistentVolumeCl
 	// volume here in response to claim deletion prevents the volume from
 	// waiting until the next sync period for its Release.
 	glog.V(5).Infof("deleteClaim[%q]: scheduling sync of volume %s", claimToClaimKey(claim), volumeName)
-	ctrl.volumeQueue.Add(volumeName)
+	ctrl.volumeQueue.Add(cache.CombineAidNamespaceName(claim.AccountID, "", volumeName))
 }
 
 // Run starts all of this controller's control loops
@@ -298,12 +299,12 @@ func (ctrl *PersistentVolumeController) volumeWorker() {
 		key := keyObj.(string)
 		glog.V(5).Infof("volumeWorker[%s]", key)
 
-		_, name, err := cache.SplitMetaNamespaceKey(key)
+		_, aid, name, err := cache.SplitMetaNamespaceKey(key)
 		if err != nil {
 			glog.V(4).Infof("error getting name of volume %q to get volume from informer: %v", key, err)
 			return false
 		}
-		volume, err := ctrl.volumeLister.Get(name)
+		volume, err := ctrl.volumeLister.GetInAccount(aid, name)
 		if err == nil {
 			// The volume still exists in informer cache, the event must have
 			// been add/update/sync
@@ -356,12 +357,12 @@ func (ctrl *PersistentVolumeController) claimWorker() {
 		key := keyObj.(string)
 		glog.V(5).Infof("claimWorker[%s]", key)
 
-		namespace, name, err := cache.SplitMetaNamespaceKey(key)
+		aid, namespace, name, err := cache.SplitMetaNamespaceKey(key)
 		if err != nil {
 			glog.V(4).Infof("error getting namespace & name of claim %q to get claim from informer: %v", key, err)
 			return false
 		}
-		claim, err := ctrl.claimLister.PersistentVolumeClaims(namespace).Get(name)
+		claim, err := ctrl.claimLister.PersistentVolumeClaimsByAccount(aid, namespace).Get(name)
 		if err == nil {
 			// The claim still exists in informer cache, the event must have
 			// been add/update/sync
@@ -438,7 +439,7 @@ func (ctrl *PersistentVolumeController) setClaimProvisioner(claim *v1.Persistent
 	// modify these, therefore create a copy.
 	claimClone := claim.DeepCopy()
 	metav1.SetMetaDataAnnotation(&claimClone.ObjectMeta, annStorageProvisioner, class.Provisioner)
-	newClaim, err := ctrl.kubeClient.CoreV1().PersistentVolumeClaims(claim.Namespace).Update(claimClone)
+	newClaim, err := ctrl.kubeClient.ArgusV1().PersistentVolumeClaims(claim.AccountID, claim.Namespace).Update(claimClone)
 	if err != nil {
 		return newClaim, err
 	}

@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2016 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,6 +51,7 @@ type RequestInfo struct {
 	APIPrefix  string
 	APIGroup   string
 	APIVersion string
+	AccountID  string
 	Namespace  string
 	// Resource is the name of the resource being requested.  This is not the kind.  For example: pods
 	Resource string
@@ -186,8 +188,10 @@ func (r *RequestInfoFactory) NewRequestInfo(req *http.Request) (*RequestInfo, er
 				currentParts = currentParts[2:]
 			}
 		}
+		requestInfo.AccountID = metav1.AccountIDDefault
 	} else {
 		requestInfo.Namespace = metav1.NamespaceNone
+		requestInfo.AccountID = metav1.AccountIDNone
 	}
 
 	// parsing successful, so we now know the proper value for .Parts

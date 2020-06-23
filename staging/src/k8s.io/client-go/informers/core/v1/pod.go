@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,13 +62,13 @@ func NewFilteredPodInformer(client kubernetes.Interface, namespace string, resyn
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CoreV1().Pods(namespace).List(options)
+				return client.ArgusV1().Pods(metav1.AccountIDAll, namespace).List(options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CoreV1().Pods(namespace).Watch(options)
+				return client.ArgusV1().Pods(metav1.AccountIDAll, namespace).Watch(options)
 			},
 		},
 		&corev1.Pod{},
@@ -77,7 +78,7 @@ func NewFilteredPodInformer(client kubernetes.Interface, namespace string, resyn
 }
 
 func (f *podInformer) defaultInformer(client kubernetes.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredPodInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+	return NewFilteredPodInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.AccountIDIndex: cache.MetaAccountIndexFunc, cache.AccountNamespaceIndex: cache.MetaAccountNamespaceIndexFunc, cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
 func (f *podInformer) Informer() cache.SharedIndexInformer {

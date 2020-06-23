@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +40,7 @@ import (
 	"k8s.io/apiserver/pkg/util/dryrun"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	utiltrace "k8s.io/apiserver/pkg/util/trace"
+	utilheaders "k8s.io/apiserver/pkg/util/headers"
 )
 
 // UpdateResource returns a function that will handle a resource update
@@ -56,13 +58,16 @@ func UpdateResource(r rest.Updater, scope RequestScope, admit admission.Interfac
 		// TODO: we either want to remove timeout or document it (if we document, move timeout out of this function and declare it in api_installer)
 		timeout := parseTimeout(req.URL.Query().Get("timeout"))
 
-		namespace, name, err := scope.Namer.Name(req)
+		accountid, namespace, name, err := scope.Namer.Name(req)
 		if err != nil {
 			scope.err(err, w, req)
 			return
 		}
+		accountid = utilheaders.ExtractAccountID(req, "update")
+
 		ctx := req.Context()
 		ctx = request.WithNamespace(ctx, namespace)
+		ctx = request.WithAccountID(ctx, accountid)
 
 		body, err := readBody(req)
 		if err != nil {
@@ -109,7 +114,7 @@ func UpdateResource(r rest.Updater, scope RequestScope, admit admission.Interfac
 		audit.LogRequestObject(ae, obj, scope.Resource, scope.Subresource, scope.Serializer)
 		admit = admission.WithAudit(admit, ae)
 
-		if err := checkName(obj, name, namespace, scope.Namer); err != nil {
+		if err := checkName(obj, name, namespace, accountid, scope.Namer); err != nil {
 			scope.err(err, w, req)
 			return
 		}
@@ -123,11 +128,11 @@ func UpdateResource(r rest.Updater, scope RequestScope, admit admission.Interfac
 					return nil, fmt.Errorf("unexpected error when extracting UID from oldObj: %v", err.Error())
 				} else if !isNotZeroObject {
 					if mutatingAdmission.Handles(admission.Create) {
-						return newObj, mutatingAdmission.Admit(admission.NewAttributesRecord(newObj, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Create, dryrun.IsDryRun(options.DryRun), userInfo))
+						return newObj, mutatingAdmission.Admit(admission.NewAttributesRecord(newObj, nil, scope.Kind, accountid, namespace, name, scope.Resource, scope.Subresource, admission.Create, dryrun.IsDryRun(options.DryRun), userInfo))
 					}
 				} else {
 					if mutatingAdmission.Handles(admission.Update) {
-						return newObj, mutatingAdmission.Admit(admission.NewAttributesRecord(newObj, oldObj, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Update, dryrun.IsDryRun(options.DryRun), userInfo))
+						return newObj, mutatingAdmission.Admit(admission.NewAttributesRecord(newObj, oldObj, scope.Kind, accountid, namespace, name, scope.Resource, scope.Subresource, admission.Update, dryrun.IsDryRun(options.DryRun), userInfo))
 					}
 				}
 				return newObj, nil
@@ -144,6 +149,7 @@ func UpdateResource(r rest.Updater, scope RequestScope, admit admission.Interfac
 			APIVersion:      scope.Resource.Version,
 			Resource:        scope.Resource.Resource,
 			Subresource:     scope.Subresource,
+			AccountID:       accountid,
 			Namespace:       namespace,
 			Name:            name,
 		}
@@ -157,11 +163,11 @@ func UpdateResource(r rest.Updater, scope RequestScope, admit admission.Interfac
 				rest.DefaultUpdatedObjectInfo(obj, transformers...),
 				withAuthorization(rest.AdmissionToValidateObjectFunc(
 					admit,
-					admission.NewAttributesRecord(nil, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Create, dryrun.IsDryRun(options.DryRun), userInfo)),
+					admission.NewAttributesRecord(nil, nil, scope.Kind, accountid, namespace, name, scope.Resource, scope.Subresource, admission.Create, dryrun.IsDryRun(options.DryRun), userInfo)),
 					scope.Authorizer, createAuthorizerAttributes),
 				rest.AdmissionToValidateObjectUpdateFunc(
 					admit,
-					admission.NewAttributesRecord(nil, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Update, dryrun.IsDryRun(options.DryRun), userInfo)),
+					admission.NewAttributesRecord(nil, nil, scope.Kind, accountid, namespace, name, scope.Resource, scope.Subresource, admission.Update, dryrun.IsDryRun(options.DryRun), userInfo)),
 				false,
 				options,
 			)

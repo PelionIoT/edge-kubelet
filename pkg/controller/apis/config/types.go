@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -412,6 +413,10 @@ type VolumeConfiguration struct {
 	// volumePluginDir is the full path of the directory in which the flex
 	// volume plugin should search for additional third party volume plugins
 	FlexVolumePluginDir string
+	// edgePVFogProxyAddress is the address of the fog-proxy TCP tunneling service (host:port)
+	EdgePVFogProxyAddress string
+	// edgePVFogProxyNodeKubeletAddress is the address of the edge-pv-provisioner on gateways (host:port)
+	EdgePVProvisionerAddress string
 }
 
 // PersistentVolumeRecyclerConfiguration contains elements describing persistent volume plugins.

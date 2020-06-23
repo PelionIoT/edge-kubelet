@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,6 +37,7 @@ import (
 	"k8s.io/apiserver/pkg/util/dryrun"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	utiltrace "k8s.io/apiserver/pkg/util/trace"
+	utilheaders "k8s.io/apiserver/pkg/util/headers"
 )
 
 // DeleteResource returns a function that will handle a resource deletion
@@ -54,13 +56,16 @@ func DeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope RequestSco
 		// TODO: we either want to remove timeout or document it (if we document, move timeout out of this function and declare it in api_installer)
 		timeout := parseTimeout(req.URL.Query().Get("timeout"))
 
-		namespace, name, err := scope.Namer.Name(req)
+		accountid, namespace, name, err := scope.Namer.Name(req)
 		if err != nil {
 			scope.err(err, w, req)
 			return
 		}
+		accountid = utilheaders.ExtractAccountID(req, "delete")
+
 		ctx := req.Context()
 		ctx = request.WithNamespace(ctx, namespace)
+		ctx = request.WithAccountID(ctx, accountid)
 		ae := request.AuditEventFrom(ctx)
 		admit = admission.WithAudit(admit, ae)
 
@@ -111,7 +116,7 @@ func DeleteResource(r rest.GracefulDeleter, allowsOptions bool, scope RequestSco
 		trace.Step("About to check admission control")
 		if admit != nil && admit.Handles(admission.Delete) {
 			userInfo, _ := request.UserFrom(ctx)
-			attrs := admission.NewAttributesRecord(nil, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Delete, dryrun.IsDryRun(options.DryRun), userInfo)
+			attrs := admission.NewAttributesRecord(nil, nil, scope.Kind, accountid, namespace, name, scope.Resource, scope.Subresource, admission.Delete, dryrun.IsDryRun(options.DryRun), userInfo)
 			if mutatingAdmission, ok := admit.(admission.MutationInterface); ok {
 				if err := mutatingAdmission.Admit(attrs); err != nil {
 					scope.err(err, w, req)
@@ -199,9 +204,11 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope RequestSco
 			scope.err(err, w, req)
 			return
 		}
+		accountid := utilheaders.ExtractAccountID(req, "deletecollection")
 
 		ctx := req.Context()
 		ctx = request.WithNamespace(ctx, namespace)
+		ctx = request.WithAccountID(ctx, accountid)
 		ae := request.AuditEventFrom(ctx)
 
 		listOptions := metainternalversion.ListOptions{}
@@ -268,7 +275,7 @@ func DeleteCollection(r rest.CollectionDeleter, checkBody bool, scope RequestSco
 		admit = admission.WithAudit(admit, ae)
 		if admit != nil && admit.Handles(admission.Delete) {
 			userInfo, _ := request.UserFrom(ctx)
-			attrs := admission.NewAttributesRecord(nil, nil, scope.Kind, namespace, "", scope.Resource, scope.Subresource, admission.Delete, dryrun.IsDryRun(options.DryRun), userInfo)
+			attrs := admission.NewAttributesRecord(nil, nil, scope.Kind, accountid, namespace, "", scope.Resource, scope.Subresource, admission.Delete, dryrun.IsDryRun(options.DryRun), userInfo)
 			if mutatingAdmission, ok := admit.(admission.MutationInterface); ok {
 				err = mutatingAdmission.Admit(attrs)
 				if err != nil {

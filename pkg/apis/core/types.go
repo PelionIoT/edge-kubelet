@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -39,6 +40,10 @@ const (
 	NamespaceNodeLease string = "kube-node-lease"
 	// TerminationMessagePathDefault means the default path to capture the application termination message running in a container
 	TerminationMessagePathDefault string = "/dev/termination-log"
+
+	AccountIDDefault string = "GREPME-DEFAULT"
+	AccountIDAll string = ""
+	AccountIDNone string = ""
 )
 
 // Volume represents a named volume in a pod that may be accessed by any containers in the pod.

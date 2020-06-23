@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +31,7 @@ type SecretLister interface {
 	// List lists all Secrets in the indexer.
 	List(selector labels.Selector) (ret []*v1.Secret, err error)
 	// Secrets returns an object that can list and get Secrets.
-	Secrets(namespace string) SecretNamespaceLister
+	Secrets(aid, namespace string) SecretNamespaceLister
 	SecretListerExpansion
 }
 
@@ -53,8 +54,8 @@ func (s *secretLister) List(selector labels.Selector) (ret []*v1.Secret, err err
 }
 
 // Secrets returns an object that can list and get Secrets.
-func (s *secretLister) Secrets(namespace string) SecretNamespaceLister {
-	return secretNamespaceLister{indexer: s.indexer, namespace: namespace}
+func (s *secretLister) Secrets(aid, namespace string) SecretNamespaceLister {
+	return secretNamespaceLister{indexer: s.indexer, namespace: namespace, aid: aid}
 }
 
 // SecretNamespaceLister helps list and get Secrets.
@@ -71,11 +72,12 @@ type SecretNamespaceLister interface {
 type secretNamespaceLister struct {
 	indexer   cache.Indexer
 	namespace string
+	aid       string
 }
 
 // List lists all Secrets in the indexer for a given namespace.
 func (s secretNamespaceLister) List(selector labels.Selector) (ret []*v1.Secret, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
+	err = cache.ListAllByAccountNamespace(s.indexer, s.aid, s.namespace, selector, func(m interface{}) {
 		ret = append(ret, m.(*v1.Secret))
 	})
 	return ret, err
@@ -83,7 +85,8 @@ func (s secretNamespaceLister) List(selector labels.Selector) (ret []*v1.Secret,
 
 // Get retrieves the Secret from the indexer for a given namespace and name.
 func (s secretNamespaceLister) Get(name string) (*v1.Secret, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+	key := cache.CombineAidNamespaceName(s.aid, s.namespace, name)
+	obj, exists, err := s.indexer.GetByKey(key)
 	if err != nil {
 		return nil, err
 	}

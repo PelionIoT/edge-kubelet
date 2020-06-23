@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -76,7 +77,7 @@ func (m *Matcher) GetNamespaceLabels(attr admission.Attributes) (map[string]stri
 	}
 	if apierrors.IsNotFound(err) {
 		// in case of latency in our caches, make a call direct to storage to verify that it truly exists or not
-		namespace, err = m.Client.CoreV1().Namespaces().Get(namespaceName, metav1.GetOptions{})
+		namespace, err = m.Client.ArgusV1().Namespaces(attr.GetAccountID()).Get(namespaceName, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}

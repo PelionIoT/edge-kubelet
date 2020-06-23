@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +30,7 @@ import (
 type NamespaceLister interface {
 	// List lists all Namespaces in the indexer.
 	List(selector labels.Selector) (ret []*v1.Namespace, err error)
+	ListInAccount(accountid string, selector labels.Selector) (ret []*v1.Namespace, err error)
 	// Get retrieves the Namespace from the index for a given name.
 	Get(name string) (*v1.Namespace, error)
 	NamespaceListerExpansion
@@ -47,6 +49,12 @@ func NewNamespaceLister(indexer cache.Indexer) NamespaceLister {
 // List lists all Namespaces in the indexer.
 func (s *namespaceLister) List(selector labels.Selector) (ret []*v1.Namespace, err error) {
 	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
+		ret = append(ret, m.(*v1.Namespace))
+	})
+	return ret, err
+}
+func (s *namespaceLister) ListInAccount(aid string, selector labels.Selector) (ret []*v1.Namespace, err error) {
+	err = cache.ListAllByAccount(s.indexer, aid, selector, func(m interface{}) {
 		ret = append(ret, m.(*v1.Namespace))
 	})
 	return ret, err

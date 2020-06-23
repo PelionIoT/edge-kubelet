@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	clientset "k8s.io/client-go/kubernetes"
-	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	argus "k8s.io/client-go/kubernetes/typed/argus/v1"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 )
 
@@ -96,9 +97,9 @@ func GetNodeHostIP(node *v1.Node) (net.IP, error) {
 }
 
 // GetNodeIP returns the ip of node with the provided hostname
-func GetNodeIP(client clientset.Interface, hostname string) net.IP {
+func GetNodeIP(client clientset.Interface, accountid, hostname string) net.IP {
 	var nodeIP net.IP
-	node, err := client.CoreV1().Nodes().Get(hostname, metav1.GetOptions{})
+	node, err := client.ArgusV1().Nodes(accountid).Get(hostname, metav1.GetOptions{})
 	if err != nil {
 		glog.Warningf("Failed to retrieve node info: %v", err)
 		return nil
@@ -133,7 +134,7 @@ func GetZoneKey(node *v1.Node) string {
 }
 
 // SetNodeCondition updates specific node condition with patch operation.
-func SetNodeCondition(c clientset.Interface, node types.NodeName, condition v1.NodeCondition) error {
+func SetNodeCondition(c clientset.Interface, aid string, node types.NodeName, condition v1.NodeCondition) error {
 	generatePatch := func(condition v1.NodeCondition) ([]byte, error) {
 		raw, err := json.Marshal(&[]v1.NodeCondition{condition})
 		if err != nil {
@@ -146,12 +147,12 @@ func SetNodeCondition(c clientset.Interface, node types.NodeName, condition v1.N
 	if err != nil {
 		return nil
 	}
-	_, err = c.CoreV1().Nodes().PatchStatus(string(node), patch)
+	_, err = c.ArgusV1().Nodes(aid).PatchStatus(aid, string(node), patch)
 	return err
 }
 
 // PatchNodeCIDR patches the specified node's CIDR to the given value.
-func PatchNodeCIDR(c clientset.Interface, node types.NodeName, cidr string) error {
+func PatchNodeCIDR(c clientset.Interface, aid string, node types.NodeName, cidr string) error {
 	raw, err := json.Marshal(cidr)
 	if err != nil {
 		return fmt.Errorf("failed to json.Marshal CIDR: %v", err)
@@ -159,20 +160,20 @@ func PatchNodeCIDR(c clientset.Interface, node types.NodeName, cidr string) erro
 
 	patchBytes := []byte(fmt.Sprintf(`{"spec":{"podCIDR":%s}}`, raw))
 
-	if _, err := c.CoreV1().Nodes().Patch(string(node), types.StrategicMergePatchType, patchBytes); err != nil {
+	if _, err := c.ArgusV1().Nodes(aid).Patch(string(node), types.StrategicMergePatchType, patchBytes); err != nil {
 		return fmt.Errorf("failed to patch node CIDR: %v", err)
 	}
 	return nil
 }
 
 // PatchNodeStatus patches node status.
-func PatchNodeStatus(c v1core.CoreV1Interface, nodeName types.NodeName, oldNode *v1.Node, newNode *v1.Node) (*v1.Node, []byte, error) {
+func PatchNodeStatus(c argus.ArgusV1Interface, nodeName types.NodeName, oldNode *v1.Node, newNode *v1.Node) (*v1.Node, []byte, error) {
 	patchBytes, err := preparePatchBytesforNodeStatus(nodeName, oldNode, newNode)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	updatedNode, err := c.Nodes().Patch(string(nodeName), types.StrategicMergePatchType, patchBytes, "status")
+	updatedNode, err := c.Nodes(oldNode.AccountID).Patch(string(nodeName), types.StrategicMergePatchType, patchBytes, "status")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to patch status %q for node %q: %v", patchBytes, nodeName, err)
 	}

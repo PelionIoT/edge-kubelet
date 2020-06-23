@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -47,6 +48,9 @@ type MetadataAccessor interface {
 
 	Kind(obj runtime.Object) (string, error)
 	SetKind(obj runtime.Object, kind string) error
+
+	AccountID(obj runtime.Object) (string, error)
+	SetAccountID(obj runtime.Object, accountid string) error
 
 	Namespace(obj runtime.Object) (string, error)
 	SetNamespace(obj runtime.Object, namespace string) error

@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -103,6 +104,10 @@ type realImageGCManager struct {
 
 	// sandbox image exempted from GC
 	sandboxImage string
+
+	// listProtectedTags returns a list of protected images tags.
+	// images with these tags will not be deleted
+	listProtectedTags func() ([]string, error)
 }
 
 // imageCache caches latest result of ListImages.
@@ -141,10 +146,13 @@ type imageRecord struct {
 
 	// Size of the image in bytes.
 	size int64
+
+	// Is this image protected
+	protected bool
 }
 
 // NewImageGCManager instantiates a new ImageGCManager object.
-func NewImageGCManager(runtime container.Runtime, statsProvider StatsProvider, recorder record.EventRecorder, nodeRef *v1.ObjectReference, policy ImageGCPolicy, sandboxImage string) (ImageGCManager, error) {
+func NewImageGCManager(runtime container.Runtime, statsProvider StatsProvider, recorder record.EventRecorder, nodeRef *v1.ObjectReference, policy ImageGCPolicy, sandboxImage string, listProtectedTags func() ([]string, error)) (ImageGCManager, error) {
 	// Validate policy.
 	if policy.HighThresholdPercent < 0 || policy.HighThresholdPercent > 100 {
 		return nil, fmt.Errorf("invalid HighThresholdPercent %d, must be in range [0-100]", policy.HighThresholdPercent)
@@ -156,14 +164,15 @@ func NewImageGCManager(runtime container.Runtime, statsProvider StatsProvider, r
 		return nil, fmt.Errorf("LowThresholdPercent %d can not be higher than HighThresholdPercent %d", policy.LowThresholdPercent, policy.HighThresholdPercent)
 	}
 	im := &realImageGCManager{
-		runtime:       runtime,
-		policy:        policy,
-		imageRecords:  make(map[string]*imageRecord),
-		statsProvider: statsProvider,
-		recorder:      recorder,
-		nodeRef:       nodeRef,
-		initialized:   false,
-		sandboxImage:  sandboxImage,
+		runtime:           runtime,
+		policy:            policy,
+		imageRecords:      make(map[string]*imageRecord),
+		statsProvider:     statsProvider,
+		recorder:          recorder,
+		nodeRef:           nodeRef,
+		initialized:       false,
+		sandboxImage:      sandboxImage,
+		listProtectedTags: listProtectedTags,
 	}
 
 	return im, nil
@@ -228,6 +237,21 @@ func (im *realImageGCManager) detectImages(detectTime time.Time) (sets.String, e
 		}
 	}
 
+	protectedTags := sets.NewString()
+
+	if im.listProtectedTags != nil {
+		glog.V(5).Infof("Listing protected images")
+
+		protected, err := im.listProtectedTags()
+
+		if err != nil {
+			glog.V(5).Infof("Unable to list images: %s", err)
+			return nil, err
+		}
+
+		protectedTags.Insert(protected...)
+	}
+
 	// Add new images and record those being used.
 	now := time.Now()
 	currentImages := sets.NewString()
@@ -253,6 +277,15 @@ func (im *realImageGCManager) detectImages(detectTime time.Time) (sets.String, e
 
 		glog.V(5).Infof("Image ID %s has size %d", image.ID, image.Size)
 		im.imageRecords[image.ID].size = image.Size
+
+		im.imageRecords[image.ID].protected = false
+		for _, tag := range image.RepoTags {
+			if protectedTags.Has(tag) {
+				glog.V(5).Infof("Image ID %s has protected tag %s", image.ID, tag)
+				im.imageRecords[image.ID].protected = true
+				break
+			}
+		}
 	}
 
 	// Remove old images from our records.
@@ -337,6 +370,10 @@ func (im *realImageGCManager) freeSpace(bytesToFree int64, freeTime time.Time) (
 	// Get all images in eviction order.
 	images := make([]evictionInfo, 0, len(im.imageRecords))
 	for image, record := range im.imageRecords {
+		if record.protected {
+			glog.V(5).Infof("Image ID %s is protected", image)
+			continue
+		}
 		if isImageUsed(image, imagesInUse) {
 			glog.V(5).Infof("Image ID %s is being used", image)
 			continue
