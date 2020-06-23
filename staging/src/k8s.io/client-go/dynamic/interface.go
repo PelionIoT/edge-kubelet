@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2016 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +39,8 @@ type ResourceInterface interface {
 	List(opts metav1.ListOptions) (*unstructured.UnstructuredList, error)
 	Watch(opts metav1.ListOptions) (watch.Interface, error)
 	Patch(name string, pt types.PatchType, data []byte, options metav1.UpdateOptions, subresources ...string) (*unstructured.Unstructured, error)
+
+	AccountID(string) ResourceInterface
 }
 
 type NamespaceableResourceInterface interface {

@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +32,7 @@ type PodLister interface {
 	List(selector labels.Selector) (ret []*v1.Pod, err error)
 	// Pods returns an object that can list and get Pods.
 	Pods(namespace string) PodNamespaceLister
+	PodsByAccount(aid, namespace string) PodNamespaceLister
 	PodListerExpansion
 }
 
@@ -56,6 +58,9 @@ func (s *podLister) List(selector labels.Selector) (ret []*v1.Pod, err error) {
 func (s *podLister) Pods(namespace string) PodNamespaceLister {
 	return podNamespaceLister{indexer: s.indexer, namespace: namespace}
 }
+func (s *podLister) PodsByAccount(aid, namespace string) PodNamespaceLister {
+	return podAccountNamespaceLister{indexer: s.indexer, namespace: namespace, aid: aid}
+}
 
 // PodNamespaceLister helps list and get Pods.
 type PodNamespaceLister interface {
@@ -72,6 +77,11 @@ type podNamespaceLister struct {
 	indexer   cache.Indexer
 	namespace string
 }
+type podAccountNamespaceLister struct {
+	indexer   cache.Indexer
+	namespace string
+	aid       string
+}
 
 // List lists all Pods in the indexer for a given namespace.
 func (s podNamespaceLister) List(selector labels.Selector) (ret []*v1.Pod, err error) {
@@ -80,10 +90,28 @@ func (s podNamespaceLister) List(selector labels.Selector) (ret []*v1.Pod, err e
 	})
 	return ret, err
 }
+func (s podAccountNamespaceLister) List(selector labels.Selector) (ret []*v1.Pod, err error) {
+	err = cache.ListAllByAccountNamespace(s.indexer, s.aid, s.namespace, selector, func(m interface{}) {
+		ret = append(ret, m.(*v1.Pod))
+	})
+	return ret, err
+}
+
 
 // Get retrieves the Pod from the indexer for a given namespace and name.
 func (s podNamespaceLister) Get(name string) (*v1.Pod, error) {
 	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.NewNotFound(v1.Resource("pod"), name)
+	}
+	return obj.(*v1.Pod), nil
+}
+func (s podAccountNamespaceLister) Get(name string) (*v1.Pod, error) {
+	key := cache.CombineAidNamespaceName(s.aid, s.namespace, name)
+	obj, exists, err := s.indexer.GetByKey(key)
 	if err != nil {
 		return nil, err
 	}

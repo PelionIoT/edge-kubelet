@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2016 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +32,8 @@ type ObjectMetaAccessor interface {
 // not support that field (Name, UID, Namespace on lists) will be a no-op and return
 // a default value.
 type Object interface {
+	GetAccountID() string
+	SetAccountID(accountid string)
 	GetNamespace() string
 	SetNamespace(namespace string)
 	GetName() string
@@ -130,6 +133,8 @@ func (obj *ObjectMeta) GetObjectMeta() Object { return obj }
 // fast, direct access to metadata fields for API objects.
 func (meta *ObjectMeta) GetNamespace() string                { return meta.Namespace }
 func (meta *ObjectMeta) SetNamespace(namespace string)       { meta.Namespace = namespace }
+func (meta *ObjectMeta) GetAccountID() string                { return meta.AccountID }
+func (meta *ObjectMeta) SetAccountID(accountid string)       { meta.AccountID = accountid }
 func (meta *ObjectMeta) GetName() string                     { return meta.Name }
 func (meta *ObjectMeta) SetName(name string)                 { meta.Name = name }
 func (meta *ObjectMeta) GetGenerateName() string             { return meta.GenerateName }

@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -210,6 +211,18 @@ func (u *Unstructured) GetKind() string {
 
 func (u *Unstructured) SetKind(kind string) {
 	u.setNestedField(kind, "kind")
+}
+
+func (u *Unstructured) GetAccountID() string {
+	return getNestedString(u.Object, "metadata", "accountid")
+}
+
+func (u *Unstructured) SetAccountID(accountid string) {
+	if len(accountid) == 0 {
+		RemoveNestedField(u.Object, "metadata", "accountid")
+		return
+	}
+	u.setNestedField(accountid, "metadata", "accountid")
 }
 
 func (u *Unstructured) GetNamespace() string {

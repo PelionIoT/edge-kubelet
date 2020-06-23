@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -124,6 +125,7 @@ func AsPartialObjectMetadata(m metav1.Object) *metav1beta1.PartialObjectMetadata
 			ObjectMeta: metav1.ObjectMeta{
 				Name:                       m.GetName(),
 				GenerateName:               m.GetGenerateName(),
+				AccountID:                  m.GetAccountID(),
 				Namespace:                  m.GetNamespace(),
 				SelfLink:                   m.GetSelfLink(),
 				UID:                        m.GetUID(),
@@ -225,6 +227,23 @@ func (resourceAccessor) APIVersion(obj runtime.Object) (string, error) {
 
 func (resourceAccessor) SetAPIVersion(obj runtime.Object, version string) error {
 	objectAccessor{obj}.SetAPIVersion(version)
+	return nil
+}
+
+func (resourceAccessor) AccountID(obj runtime.Object) (string, error) {
+	accessor, err := Accessor(obj)
+	if err != nil {
+		return "", err
+	}
+	return accessor.GetAccountID(), nil
+}
+
+func (resourceAccessor) SetAccountID(obj runtime.Object, accountid string) error {
+	accessor, err := Accessor(obj)
+	if err != nil {
+		return err
+	}
+	accessor.SetAccountID(accountid)
 	return nil
 }
 
@@ -446,6 +465,7 @@ func setOwnerReference(v reflect.Value, o *metav1.OwnerReference) error {
 // genericAccessor contains pointers to strings that can modify an arbitrary
 // struct and implements the Accessor interface.
 type genericAccessor struct {
+	accountid         *string
 	namespace         *string
 	name              *string
 	generateName      *string
@@ -460,6 +480,20 @@ type genericAccessor struct {
 	annotations       *map[string]string
 	ownerReferences   reflect.Value
 	finalizers        *[]string
+}
+
+func (a genericAccessor) GetAccountID() string {
+	if a.accountid == nil {
+		return ""
+	}
+	return *a.accountid
+}
+
+func (a genericAccessor) SetAccountID(accountid string) {
+	if a.accountid == nil {
+		return
+	}
+	*a.accountid = accountid
 }
 
 func (a genericAccessor) GetNamespace() string {

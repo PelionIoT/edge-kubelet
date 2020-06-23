@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -64,6 +65,8 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/server/streaming"
 	kubelettypes "k8s.io/kubernetes/pkg/kubelet/types"
 	"k8s.io/kubernetes/pkg/util/configz"
+	"k8s.io/kubernetes/pkg/volume"
+	"k8s.io/kubernetes/pkg/volume/edge_pv"
 )
 
 const (
@@ -73,6 +76,7 @@ const (
 	specPath            = "/spec/"
 	statsPath           = "/stats/"
 	logsPath            = "/logs/"
+	edgePVPath          = "/edge-pv/"
 )
 
 // Server is a http.Handler which exposes kubelet functionality over HTTP.
@@ -126,12 +130,14 @@ func ListenAndServeKubeletServer(
 	port uint,
 	tlsOptions *TLSOptions,
 	auth AuthInterface,
+	edgePVPlugin volume.VolumePlugin,
+	enableEdgePV,
 	enableDebuggingHandlers,
 	enableContentionProfiling,
 	redirectContainerStreaming bool,
 	criHandler http.Handler) {
 	glog.Infof("Starting to listen on %s:%d", address, port)
-	handler := NewServer(host, resourceAnalyzer, auth, enableDebuggingHandlers, enableContentionProfiling, redirectContainerStreaming, criHandler)
+	handler := NewServer(host, resourceAnalyzer, auth, edgePVPlugin, enableEdgePV, enableDebuggingHandlers, enableContentionProfiling, redirectContainerStreaming, criHandler)
 	s := &http.Server{
 		Addr:           net.JoinHostPort(address.String(), strconv.FormatUint(uint64(port), 10)),
 		Handler:        &handler,
@@ -151,7 +157,7 @@ func ListenAndServeKubeletServer(
 // ListenAndServeKubeletReadOnlyServer initializes a server to respond to HTTP network requests on the Kubelet.
 func ListenAndServeKubeletReadOnlyServer(host HostInterface, resourceAnalyzer stats.ResourceAnalyzer, address net.IP, port uint) {
 	glog.V(1).Infof("Starting to listen read-only on %s:%d", address, port)
-	s := NewServer(host, resourceAnalyzer, nil, false, false, false, nil)
+	s := NewServer(host, resourceAnalyzer, nil, nil, false, false, false, false, nil)
 
 	server := &http.Server{
 		Addr:           net.JoinHostPort(address.String(), strconv.FormatUint(uint64(port), 10)),
@@ -191,6 +197,8 @@ func NewServer(
 	host HostInterface,
 	resourceAnalyzer stats.ResourceAnalyzer,
 	auth AuthInterface,
+	edgePVPlugin volume.VolumePlugin,
+	enableEdgePV,
 	enableDebuggingHandlers,
 	enableContentionProfiling,
 	redirectContainerStreaming bool,
@@ -214,6 +222,10 @@ func NewServer(
 	} else {
 		server.InstallDebuggingDisabledHandlers()
 	}
+	if enableEdgePV {
+		server.InstallEdgePVHandlers(edgePVPlugin)
+	}
+
 	return server
 }
 
@@ -455,6 +467,36 @@ func (s *Server) InstallDebuggingDisabledHandlers() {
 	for _, p := range paths {
 		s.restfulCont.Handle(p, h)
 	}
+}
+
+func (s *Server) InstallEdgePVHandlers(plugin volume.VolumePlugin) {
+	glog.Infof("Installing edge-pv volume handlers")
+
+	provisioner, ok := plugin.(volume.ProvisionableVolumePlugin)
+
+	if !ok {
+		glog.Errorf("Error while installing edge-pv handlers: plugin does not support provisionable interface")
+
+		return
+	}
+
+	deleter, ok := plugin.(volume.DeletableVolumePlugin)
+
+	if !ok {
+		glog.Errorf("Error while installing edge-pv handlers: plugin does not support deletable interface")
+
+		return
+	}
+
+	recycler, ok := plugin.(volume.RecyclableVolumePlugin)
+
+	if !ok {
+		glog.Errorf("Error while installing edge-pv handlers: plugin does not support recyclable interface")
+
+		return
+	}
+
+	s.restfulCont.Add(edge_pv.EdgePVHandler(edgePVPath, provisioner, deleter, recycler))
 }
 
 // Checks if kubelet's sync loop  that updates containers is working.

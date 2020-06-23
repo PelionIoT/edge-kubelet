@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Copyright 2018-2020, Arm Limited and affiliates.
 # Copyright 2014 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -67,6 +68,7 @@ kube::version::get_version_vars() {
       # This translates the "git describe" to an actual semver.org
       # compatible semantic version that looks something like this:
       #   v1.1.0-alpha.0.6+84c76d1142ea4d
+
       #
       # TODO: We continue calling this "git version" because so many
       # downstream consumers are expecting it there.
@@ -105,6 +107,14 @@ kube::version::get_version_vars() {
       fi
     fi
   fi
+
+  # ARGUS: We're not reading our version info from git tags since our
+  #   versioning is separate from but related to k8s versioning. We set it here
+  #   and can expand it with argus-specific version info later if needed.
+  KUBE_GIT_TREE_STATE="clean"
+  KUBE_GIT_MAJOR=1
+  KUBE_GIT_MINOR=13
+  KUBE_GIT_VERSION="v1.13.2-argus"
 }
 
 # Saves the environment flags to $1

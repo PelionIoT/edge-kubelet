@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -56,7 +57,7 @@ func NamespaceKeyFunc(prefix string, obj runtime.Object) (string, error) {
 	if msgs := path.IsValidPathSegmentName(name); len(msgs) != 0 {
 		return "", fmt.Errorf("invalid name: %v", msgs)
 	}
-	return prefix + "/" + meta.GetNamespace() + "/" + name, nil
+	return prefix + "/" + meta.GetAccountID() + "/" + meta.GetNamespace() + "/" + name, nil
 }
 
 func NoNamespaceKeyFunc(prefix string, obj runtime.Object) (string, error) {
@@ -68,7 +69,7 @@ func NoNamespaceKeyFunc(prefix string, obj runtime.Object) (string, error) {
 	if msgs := path.IsValidPathSegmentName(name); len(msgs) != 0 {
 		return "", fmt.Errorf("invalid name: %v", msgs)
 	}
-	return prefix + "/" + name, nil
+	return prefix + "/" + meta.GetAccountID() + "/" + name, nil
 }
 
 // HighWaterMark is a thread-safe object for tracking the maximum value seen

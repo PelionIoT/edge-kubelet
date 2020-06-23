@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -69,6 +70,7 @@ func NewForConfig(inConfig *rest.Config) (Interface, error) {
 type dynamicResourceClient struct {
 	client    *dynamicClient
 	namespace string
+	accountid string
 	resource  schema.GroupVersionResource
 }
 
@@ -79,6 +81,12 @@ func (c *dynamicClient) Resource(resource schema.GroupVersionResource) Namespace
 func (c *dynamicResourceClient) Namespace(ns string) ResourceInterface {
 	ret := *c
 	ret.namespace = ns
+	return &ret
+}
+
+func (c *dynamicResourceClient) AccountID(aid string) ResourceInterface {
+	ret := *c
+	ret.accountid = aid
 	return &ret
 }
 
@@ -98,6 +106,7 @@ func (c *dynamicResourceClient) Create(obj *unstructured.Unstructured, opts meta
 
 	result := c.client.client.
 		Post().
+		AccountID(c.accountid).
 		AbsPath(append(c.makeURLSegments(name), subresources...)...).
 		Body(outBytes).
 		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).
@@ -129,6 +138,7 @@ func (c *dynamicResourceClient) Update(obj *unstructured.Unstructured, opts meta
 
 	result := c.client.client.
 		Put().
+		AccountID(c.accountid).
 		AbsPath(append(c.makeURLSegments(accessor.GetName()), subresources...)...).
 		Body(outBytes).
 		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).
@@ -161,6 +171,7 @@ func (c *dynamicResourceClient) UpdateStatus(obj *unstructured.Unstructured, opt
 
 	result := c.client.client.
 		Put().
+		AccountID(c.accountid).
 		AbsPath(append(c.makeURLSegments(accessor.GetName()), "status")...).
 		Body(outBytes).
 		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).
@@ -191,6 +202,7 @@ func (c *dynamicResourceClient) Delete(name string, opts *metav1.DeleteOptions, 
 
 	result := c.client.client.
 		Delete().
+		AccountID(c.accountid).
 		AbsPath(append(c.makeURLSegments(name), subresources...)...).
 		Body(deleteOptionsByte).
 		Do()
@@ -208,6 +220,7 @@ func (c *dynamicResourceClient) DeleteCollection(opts *metav1.DeleteOptions, lis
 
 	result := c.client.client.
 		Delete().
+		AccountID(c.accountid).
 		AbsPath(c.makeURLSegments("")...).
 		Body(deleteOptionsByte).
 		SpecificallyVersionedParams(&listOptions, dynamicParameterCodec, versionV1).
@@ -216,7 +229,7 @@ func (c *dynamicResourceClient) DeleteCollection(opts *metav1.DeleteOptions, lis
 }
 
 func (c *dynamicResourceClient) Get(name string, opts metav1.GetOptions, subresources ...string) (*unstructured.Unstructured, error) {
-	result := c.client.client.Get().AbsPath(append(c.makeURLSegments(name), subresources...)...).SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).Do()
+	result := c.client.client.Get().AccountID(c.accountid).AbsPath(append(c.makeURLSegments(name), subresources...)...).SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).Do()
 	if err := result.Error(); err != nil {
 		return nil, err
 	}
@@ -232,7 +245,7 @@ func (c *dynamicResourceClient) Get(name string, opts metav1.GetOptions, subreso
 }
 
 func (c *dynamicResourceClient) List(opts metav1.ListOptions) (*unstructured.UnstructuredList, error) {
-	result := c.client.client.Get().AbsPath(c.makeURLSegments("")...).SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).Do()
+	result := c.client.client.Get().AccountID(c.accountid).AbsPath(c.makeURLSegments("")...).SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).Do()
 	if err := result.Error(); err != nil {
 		return nil, err
 	}
@@ -278,7 +291,7 @@ func (c *dynamicResourceClient) Watch(opts metav1.ListOptions) (watch.Interface,
 	}
 
 	opts.Watch = true
-	return c.client.client.Get().AbsPath(c.makeURLSegments("")...).
+	return c.client.client.Get().AccountID(c.accountid).AbsPath(c.makeURLSegments("")...).
 		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).
 		WatchWithSpecificDecoders(wrappedDecoderFn, unstructured.UnstructuredJSONScheme)
 }
@@ -286,6 +299,7 @@ func (c *dynamicResourceClient) Watch(opts metav1.ListOptions) (watch.Interface,
 func (c *dynamicResourceClient) Patch(name string, pt types.PatchType, data []byte, opts metav1.UpdateOptions, subresources ...string) (*unstructured.Unstructured, error) {
 	result := c.client.client.
 		Patch(pt).
+		AccountID(c.accountid).
 		AbsPath(append(c.makeURLSegments(name), subresources...)...).
 		Body(data).
 		SpecificallyVersionedParams(&opts, dynamicParameterCodec, versionV1).

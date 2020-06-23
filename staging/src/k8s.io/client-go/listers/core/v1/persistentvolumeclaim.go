@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +32,7 @@ type PersistentVolumeClaimLister interface {
 	List(selector labels.Selector) (ret []*v1.PersistentVolumeClaim, err error)
 	// PersistentVolumeClaims returns an object that can list and get PersistentVolumeClaims.
 	PersistentVolumeClaims(namespace string) PersistentVolumeClaimNamespaceLister
+	PersistentVolumeClaimsByAccount(aid, namespace string) PersistentVolumeClaimNamespaceLister
 	PersistentVolumeClaimListerExpansion
 }
 
@@ -55,6 +57,10 @@ func (s *persistentVolumeClaimLister) List(selector labels.Selector) (ret []*v1.
 // PersistentVolumeClaims returns an object that can list and get PersistentVolumeClaims.
 func (s *persistentVolumeClaimLister) PersistentVolumeClaims(namespace string) PersistentVolumeClaimNamespaceLister {
 	return persistentVolumeClaimNamespaceLister{indexer: s.indexer, namespace: namespace}
+}
+
+func (s *persistentVolumeClaimLister) PersistentVolumeClaimsByAccount(aid, namespace string) PersistentVolumeClaimNamespaceLister {
+	return persistentVolumeClaimAccountNamespaceLister{indexer: s.indexer, namespace: namespace, aid: aid}
 }
 
 // PersistentVolumeClaimNamespaceLister helps list and get PersistentVolumeClaims.
@@ -84,6 +90,32 @@ func (s persistentVolumeClaimNamespaceLister) List(selector labels.Selector) (re
 // Get retrieves the PersistentVolumeClaim from the indexer for a given namespace and name.
 func (s persistentVolumeClaimNamespaceLister) Get(name string) (*v1.PersistentVolumeClaim, error) {
 	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.NewNotFound(v1.Resource("persistentvolumeclaim"), name)
+	}
+	return obj.(*v1.PersistentVolumeClaim), nil
+}
+
+type persistentVolumeClaimAccountNamespaceLister struct {
+	indexer   cache.Indexer
+	namespace string
+	aid       string
+}
+
+func (s persistentVolumeClaimAccountNamespaceLister) List(selector labels.Selector) (ret []*v1.PersistentVolumeClaim, err error) {
+	err = cache.ListAllByAccountNamespace(s.indexer, s.aid, s.namespace, selector, func(m interface{}) {
+		ret = append(ret, m.(*v1.PersistentVolumeClaim))
+	})
+	return ret, err
+}
+
+// Get retrieves the PersistentVolumeClaim from the indexer for a given namespace and name.
+func (s persistentVolumeClaimAccountNamespaceLister) Get(name string) (*v1.PersistentVolumeClaim, error) {
+	key := cache.CombineAidNamespaceName(s.aid, s.namespace, name)
+	obj, exists, err := s.indexer.GetByKey(key)
 	if err != nil {
 		return nil, err
 	}

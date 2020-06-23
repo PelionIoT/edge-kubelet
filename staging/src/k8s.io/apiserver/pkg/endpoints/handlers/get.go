@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,6 +38,7 @@ import (
 	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
 	utiltrace "k8s.io/apiserver/pkg/util/trace"
+	utilheaders "k8s.io/apiserver/pkg/util/headers"
 )
 
 // getterFunc performs a get request with the given context and object name. The request
@@ -50,13 +52,16 @@ func getResourceHandler(scope RequestScope, getter getterFunc) http.HandlerFunc 
 		trace := utiltrace.New("Get " + req.URL.Path)
 		defer trace.LogIfLong(500 * time.Millisecond)
 
-		namespace, name, err := scope.Namer.Name(req)
+		accountid, namespace, name, err := scope.Namer.Name(req)
 		if err != nil {
 			scope.err(err, w, req)
 			return
 		}
+		accountid = utilheaders.ExtractAccountID(req, "get")
+
 		ctx := req.Context()
 		ctx = request.WithNamespace(ctx, namespace)
+		ctx = request.WithAccountID(ctx, accountid)
 
 		result, err := getter(ctx, name, req, trace)
 		if err != nil {
@@ -179,13 +184,15 @@ func ListResource(r rest.Lister, rw rest.Watcher, scope RequestScope, forceWatch
 		// Watches for single objects are routed to this function.
 		// Treat a name parameter the same as a field selector entry.
 		hasName := true
-		_, name, err := scope.Namer.Name(req)
+		_, _, name, err := scope.Namer.Name(req)
 		if err != nil {
 			hasName = false
 		}
+		accountid := utilheaders.ExtractAccountID(req, "list")
 
 		ctx := req.Context()
 		ctx = request.WithNamespace(ctx, namespace)
+		ctx = request.WithAccountID(ctx, accountid)
 
 		opts := metainternalversion.ListOptions{}
 		if err := metainternalversion.ParameterCodec.DecodeParameters(req.URL.Query(), scope.MetaGroupVersion, &opts); err != nil {

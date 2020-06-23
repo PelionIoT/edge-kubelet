@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,6 +62,9 @@ type AdmissionRequest struct {
 	// Namespace is the namespace associated with the request (if any).
 	// +optional
 	Namespace string `json:"namespace,omitempty" protobuf:"bytes,6,opt,name=namespace"`
+	// AccountID is for multitenancy
+	// +optional
+	AccountID string `json:"accountid,omitempty" protobuf:"bytes,12,opt,name=accountid"`
 	// Operation is the operation being performed
 	Operation Operation `json:"operation" protobuf:"bytes,7,opt,name=operation"`
 	// UserInfo is information about the requesting user

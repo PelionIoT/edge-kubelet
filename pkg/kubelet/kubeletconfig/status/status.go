@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2017 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -196,7 +197,7 @@ func (s *nodeConfigStatus) Sync(client clientset.Interface, nodeName string) {
 	newNode.Status.Config = status
 
 	// patch the node with the new status
-	if _, _, err := nodeutil.PatchNodeStatus(client.CoreV1(), types.NodeName(nodeName), oldNode, newNode); err != nil {
+	if _, _, err := nodeutil.PatchNodeStatus(client.ArgusV1(), types.NodeName(nodeName), oldNode, newNode); err != nil {
 		utillog.Errorf("failed to patch node status, error: %v", err)
 	}
 }

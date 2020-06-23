@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -65,7 +66,9 @@ func IndexFuncToKeyFuncAdapter(indexFunc IndexFunc) KeyFunc {
 }
 
 const (
-	NamespaceIndex string = "namespace"
+	NamespaceIndex        string = "namespace"
+	AccountIDIndex        string = "accountid"
+	AccountNamespaceIndex string = "account-namespace"
 )
 
 // MetaNamespaceIndexFunc is a default index function that indexes based on an object's namespace
@@ -75,6 +78,27 @@ func MetaNamespaceIndexFunc(obj interface{}) ([]string, error) {
 		return []string{""}, fmt.Errorf("object has no meta: %v", err)
 	}
 	return []string{meta.GetNamespace()}, nil
+}
+
+// MetaAccountIndexFunc is an index function that indexes based on an object's accountid
+func MetaAccountIndexFunc(obj interface{}) ([]string, error) {
+	meta, err := meta.Accessor(obj)
+	if err != nil {
+		return []string{""}, fmt.Errorf("object has no meta: %v", err)
+	}
+	return []string{meta.GetAccountID()}, nil
+}
+
+func MetaAccountNamespaceIndexFunc(obj interface{}) ([]string, error) {
+	meta, err := meta.Accessor(obj)
+	if err != nil {
+		return []string{""}, fmt.Errorf("object has no meta: %v", err)
+	}
+	aid := meta.GetAccountID()
+	if len(aid) > 0 {
+		aid = aid + "/"
+	}
+	return []string{aid + meta.GetNamespace()}, nil
 }
 
 // Index maps the indexed value to a set of keys in the store that match on that value

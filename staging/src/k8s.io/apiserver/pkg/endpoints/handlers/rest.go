@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,6 +43,7 @@ import (
 	"k8s.io/apiserver/pkg/registry/rest"
 	utiltrace "k8s.io/apiserver/pkg/util/trace"
 	openapiproto "k8s.io/kube-openapi/pkg/util/proto"
+	utilheaders "k8s.io/apiserver/pkg/util/headers"
 )
 
 // RequestScope encapsulates common fields across all RESTful handler methods.
@@ -108,13 +110,16 @@ func ConnectResource(connecter rest.Connecter, scope RequestScope, admit admissi
 			return
 		}
 
-		namespace, name, err := scope.Namer.Name(req)
+		accountid, namespace, name, err := scope.Namer.Name(req)
 		if err != nil {
 			scope.err(err, w, req)
 			return
 		}
+		accountid = utilheaders.ExtractAccountID(req, "connect")
+
 		ctx := req.Context()
 		ctx = request.WithNamespace(ctx, namespace)
+		ctx = request.WithAccountID(ctx, accountid)
 		ae := request.AuditEventFrom(ctx)
 		admit = admission.WithAudit(admit, ae)
 
@@ -128,14 +133,14 @@ func ConnectResource(connecter rest.Connecter, scope RequestScope, admit admissi
 			userInfo, _ := request.UserFrom(ctx)
 			// TODO: remove the mutating admission here as soon as we have ported all plugin that handle CONNECT
 			if mutatingAdmission, ok := admit.(admission.MutationInterface); ok {
-				err = mutatingAdmission.Admit(admission.NewAttributesRecord(opts, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Connect, false, userInfo))
+				err = mutatingAdmission.Admit(admission.NewAttributesRecord(opts, nil, scope.Kind, accountid, namespace, name, scope.Resource, scope.Subresource, admission.Connect, false, userInfo))
 				if err != nil {
 					scope.err(err, w, req)
 					return
 				}
 			}
 			if validatingAdmission, ok := admit.(admission.ValidationInterface); ok {
-				err = validatingAdmission.Validate(admission.NewAttributesRecord(opts, nil, scope.Kind, namespace, name, scope.Resource, scope.Subresource, admission.Connect, false, userInfo))
+				err = validatingAdmission.Validate(admission.NewAttributesRecord(opts, nil, scope.Kind, accountid, namespace, name, scope.Resource, scope.Subresource, admission.Connect, false, userInfo))
 				if err != nil {
 					scope.err(err, w, req)
 					return
@@ -252,8 +257,8 @@ func hasUID(obj runtime.Object) (bool, error) {
 }
 
 // checkName checks the provided name against the request
-func checkName(obj runtime.Object, name, namespace string, namer ScopeNamer) error {
-	objNamespace, objName, err := namer.ObjectName(obj)
+func checkName(obj runtime.Object, name, namespace, accountid string, namer ScopeNamer) error {
+	_, objNamespace, objName, err := namer.ObjectName(obj)
 	if err != nil {
 		return errors.NewBadRequest(fmt.Sprintf(
 			"the name of the object (%s based on URL) was undeterminable: %v", name, err))

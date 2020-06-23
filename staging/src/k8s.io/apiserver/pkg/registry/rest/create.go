@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,6 +32,7 @@ import (
 	"k8s.io/apiserver/pkg/features"
 	"k8s.io/apiserver/pkg/storage/names"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 )
 
 // RESTCreateStrategy defines the minimum validation, accepted input, and
@@ -84,6 +86,10 @@ func BeforeCreate(strategy RESTCreateStrategy, ctx context.Context, obj runtime.
 	} else if len(objectMeta.GetNamespace()) > 0 {
 		objectMeta.SetNamespace(metav1.NamespaceNone)
 	}
+
+	accountid := genericapirequest.AccountIDValue(ctx)
+	objectMeta.SetAccountID(accountid)
+
 	objectMeta.SetDeletionTimestamp(nil)
 	objectMeta.SetDeletionGracePeriodSeconds(nil)
 	strategy.PrepareForCreate(ctx, obj)
@@ -167,6 +173,7 @@ func AdmissionToValidateObjectFunc(admit admission.Interface, staticAttributes a
 			obj,
 			staticAttributes.GetOldObject(),
 			staticAttributes.GetKind(),
+			staticAttributes.GetAccountID(),
 			staticAttributes.GetNamespace(),
 			staticAttributes.GetName(),
 			staticAttributes.GetResource(),

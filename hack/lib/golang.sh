@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Copyright 2018-2020, Arm Limited and affiliates.
 # Copyright 2014 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,6 +78,7 @@ kube::golang::node_targets() {
   local targets=(
     cmd/kube-proxy
     cmd/kubeadm
+    cmd/dockershim
     cmd/kubelet
   )
   echo "${targets[@]}"
@@ -117,10 +119,10 @@ else
   # The server platform we are building on.
   readonly KUBE_SERVER_PLATFORMS=(
     linux/amd64
-    linux/arm
-    linux/arm64
-    linux/s390x
-    linux/ppc64le
+#    linux/arm
+#    linux/arm64
+#    linux/s390x
+#    linux/ppc64le
   )
 
   # The node platforms we build for
@@ -128,23 +130,23 @@ else
     linux/amd64
     linux/arm
     linux/arm64
-    linux/s390x
-    linux/ppc64le
-    windows/amd64
+#    linux/s390x
+#    linux/ppc64le
+#    windows/amd64
   )
 
   # If we update this we should also update the set of platforms whose standard library is precompiled for in build/build-image/cross/Dockerfile
   readonly KUBE_CLIENT_PLATFORMS=(
     linux/amd64
-    linux/386
+#    linux/386
     linux/arm
     linux/arm64
-    linux/s390x
-    linux/ppc64le
-    darwin/amd64
-    darwin/386
-    windows/amd64
-    windows/386
+#    linux/s390x
+#    linux/ppc64le
+#    darwin/amd64
+#    darwin/386
+#    windows/amd64
+#    windows/386
   )
 
   # Which platforms we should compile test targets for. Not all client platforms need these tests
@@ -152,10 +154,10 @@ else
     linux/amd64
     linux/arm
     linux/arm64
-    linux/s390x
-    linux/ppc64le
-    darwin/amd64
-    windows/amd64
+#    linux/s390x
+#    linux/ppc64le
+#    darwin/amd64
+#    windows/amd64
   )
 fi
 

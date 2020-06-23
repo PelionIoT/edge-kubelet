@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,13 +62,13 @@ func NewFilteredPersistentVolumeClaimInformer(client kubernetes.Interface, names
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CoreV1().PersistentVolumeClaims(namespace).List(options)
+				return client.ArgusV1().PersistentVolumeClaims(metav1.AccountIDAll, namespace).List(options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CoreV1().PersistentVolumeClaims(namespace).Watch(options)
+				return client.ArgusV1().PersistentVolumeClaims(metav1.AccountIDAll, namespace).Watch(options)
 			},
 		},
 		&corev1.PersistentVolumeClaim{},
@@ -77,7 +78,7 @@ func NewFilteredPersistentVolumeClaimInformer(client kubernetes.Interface, names
 }
 
 func (f *persistentVolumeClaimInformer) defaultInformer(client kubernetes.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredPersistentVolumeClaimInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+	return NewFilteredPersistentVolumeClaimInformer(client, f.namespace, resyncPeriod, cache.Indexers{cache.AccountIDIndex: cache.MetaAccountIndexFunc, cache.AccountNamespaceIndex: cache.MetaAccountNamespaceIndexFunc, cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
 func (f *persistentVolumeClaimInformer) Informer() cache.SharedIndexInformer {

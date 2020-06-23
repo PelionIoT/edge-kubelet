@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,6 +45,7 @@ import (
 	restclientwatch "k8s.io/client-go/rest/watch"
 	"k8s.io/client-go/tools/metrics"
 	"k8s.io/client-go/util/flowcontrol"
+	utilheaders "k8s.io/apiserver/pkg/util/headers"
 )
 
 var (
@@ -95,6 +97,8 @@ type Request struct {
 	// structural elements of the request that are part of the Kubernetes API conventions
 	namespace    string
 	namespaceSet bool
+	aid          string
+	aidSet       bool
 	resource     string
 	resourceName string
 	subresource  string
@@ -255,6 +259,24 @@ func (r *Request) Namespace(namespace string) *Request {
 	}
 	r.namespaceSet = true
 	r.namespace = namespace
+	return r
+}
+
+func (r *Request) AccountID(aid string) *Request {
+	if r.err != nil {
+		return r
+	}
+	if r.aidSet {
+		r.err = fmt.Errorf("accountId already set to %q, cannot change to %q", r.aid, aid)
+		return r
+	}
+	if msgs := IsValidPathSegmentName(aid); len(msgs) != 0 {
+		r.err = fmt.Errorf("invalid accountId %q: %v", aid, msgs)
+		return r
+	}
+	r.aidSet = true
+	r.aid = aid
+	r.headers.Set(utilheaders.AccountIdHeader, aid)
 	return r
 }
 
@@ -687,6 +709,7 @@ func (r *Request) request(fn func(*http.Request, *http.Response)) error {
 		return r.err
 	}
 
+	// TODO Tami: need to verify no empty account id
 	// TODO: added to catch programmer errors (invoking operations with an object with an empty namespace)
 	if (r.verb == "GET" || r.verb == "PUT" || r.verb == "DELETE") && r.namespaceSet && len(r.resourceName) > 0 && len(r.namespace) == 0 {
 		return fmt.Errorf("an empty namespace may not be set when a resource name is provided")
@@ -860,6 +883,13 @@ func (r *Request) transformResponse(resp *http.Response, req *http.Request) Resu
 
 	glogBody("Response Body", body)
 
+	//TODO Tami: account id is expected to be filled in by the apiserver when sending response
+	// for now we'll fake it here, but needs to be fixed
+	accountId := resp.Header.Get(utilheaders.AccountIdHeader)
+	if len(accountId) <= 0 {
+		accountId = req.Header.Get(utilheaders.AccountIdHeader)
+	}
+
 	// verify the content type is accurate
 	contentType := resp.Header.Get("Content-Type")
 	decoder := r.serializers.Decoder
@@ -897,6 +927,7 @@ func (r *Request) transformResponse(resp *http.Response, req *http.Request) Resu
 			body:        body,
 			contentType: contentType,
 			statusCode:  resp.StatusCode,
+			accountId:   accountId,
 			decoder:     decoder,
 			err:         err,
 		}
@@ -906,6 +937,7 @@ func (r *Request) transformResponse(resp *http.Response, req *http.Request) Resu
 		body:        body,
 		contentType: contentType,
 		statusCode:  resp.StatusCode,
+		accountId:   accountId,
 		decoder:     decoder,
 	}
 }
@@ -1045,6 +1077,7 @@ type Result struct {
 	contentType string
 	err         error
 	statusCode  int
+	accountId   string
 
 	decoder runtime.Decoder
 }
@@ -1123,6 +1156,11 @@ func (r Result) Into(obj runtime.Object) error {
 // 201 created or a different response.
 func (r Result) WasCreated(wasCreated *bool) Result {
 	*wasCreated = r.statusCode == http.StatusCreated
+	return r
+}
+
+func (r Result) IntoMeta(obj *metav1.ObjectMeta) Result {
+	obj.AccountID = r.accountId
 	return r
 }
 

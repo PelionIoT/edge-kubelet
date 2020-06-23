@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -106,6 +107,8 @@ func (n nodeAuthorizerAttributesGetter) GetRequestAttributes(u user.Info, r *htt
 		attrs.Subresource = "log"
 	case isSubpath(requestPath, specPath):
 		attrs.Subresource = "spec"
+	case isSubpath(requestPath, edgePVPath):
+		attrs.Subresource = "edge-pv"
 	}
 
 	glog.V(5).Infof("Node request attributes: user=%#v attrs=%#v", attrs.GetUser(), attrs)

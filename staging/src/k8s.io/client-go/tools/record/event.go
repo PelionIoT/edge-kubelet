@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +24,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/clock"
@@ -265,7 +267,7 @@ func (recorder *recorderImpl) generateEvent(object runtime.Object, annotations m
 		return
 	}
 
-	event := recorder.makeEvent(ref, annotations, eventtype, reason, message)
+	event := recorder.makeEvent(object, ref, annotations, eventtype, reason, message)
 	event.Source = recorder.source
 
 	go func() {
@@ -299,15 +301,26 @@ func (recorder *recorderImpl) AnnotatedEventf(object runtime.Object, annotations
 	recorder.generateEvent(object, annotations, metav1.Now(), eventtype, reason, fmt.Sprintf(messageFmt, args...))
 }
 
-func (recorder *recorderImpl) makeEvent(ref *v1.ObjectReference, annotations map[string]string, eventtype, reason, message string) *v1.Event {
+func (recorder *recorderImpl) makeEvent(object runtime.Object, ref *v1.ObjectReference, annotations map[string]string, eventtype, reason, message string) *v1.Event {
 	t := metav1.Time{Time: recorder.clock.Now()}
 	namespace := ref.Namespace
 	if namespace == "" {
 		namespace = metav1.NamespaceDefault
 	}
+
+	//ARGUS TODO plumb aid into ObjectReference instead of this.
+	accountid := ""
+	if object != nil {
+		objectMeta, err := meta.Accessor(object)
+		if err != nil && objectMeta != nil {
+			accountid = objectMeta.GetAccountID()
+		}
+	}
+
 	return &v1.Event{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        fmt.Sprintf("%v.%x", ref.Name, t.UnixNano()),
+			AccountID:   accountid,
 			Namespace:   namespace,
 			Annotations: annotations,
 		},

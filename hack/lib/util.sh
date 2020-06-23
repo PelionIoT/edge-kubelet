@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# Copyright 2018-2020, Arm Limited and affiliates.
 # Copyright 2014 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +16,7 @@
 # limitations under the License.
 
 kube::util::sortable_date() {
-  date "+%Y%m%d-%H%M%S"
+  date -u "+%Y%m%d-%H%M%S"
 }
 
 # arguments: target, item1, item2, item3, ...

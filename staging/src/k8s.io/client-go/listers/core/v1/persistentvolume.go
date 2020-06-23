@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,8 +30,10 @@ import (
 type PersistentVolumeLister interface {
 	// List lists all PersistentVolumes in the indexer.
 	List(selector labels.Selector) (ret []*v1.PersistentVolume, err error)
+	ListInAccount(aid string, selector labels.Selector) (ret []*v1.PersistentVolume, err error)
 	// Get retrieves the PersistentVolume from the index for a given name.
 	Get(name string) (*v1.PersistentVolume, error)
+	GetInAccount(aid, name string) (*v1.PersistentVolume, error)
 	PersistentVolumeListerExpansion
 }
 
@@ -52,9 +55,28 @@ func (s *persistentVolumeLister) List(selector labels.Selector) (ret []*v1.Persi
 	return ret, err
 }
 
+func (s *persistentVolumeLister) ListInAccount(aid string, selector labels.Selector) (ret []*v1.PersistentVolume, err error) {
+	err = cache.ListAllByAccount(s.indexer, aid, selector, func(m interface{}) {
+		ret = append(ret, m.(*v1.PersistentVolume))
+	})
+	return ret, err
+}
+
 // Get retrieves the PersistentVolume from the index for a given name.
 func (s *persistentVolumeLister) Get(name string) (*v1.PersistentVolume, error) {
 	obj, exists, err := s.indexer.GetByKey(name)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errors.NewNotFound(v1.Resource("persistentvolume"), name)
+	}
+	return obj.(*v1.PersistentVolume), nil
+}
+
+func (s *persistentVolumeLister) GetInAccount(aid, name string) (*v1.PersistentVolume, error) {
+	key := cache.CombineAidNamespaceName(aid, "", name)
+	obj, exists, err := s.indexer.GetByKey(key)
 	if err != nil {
 		return nil, err
 	}

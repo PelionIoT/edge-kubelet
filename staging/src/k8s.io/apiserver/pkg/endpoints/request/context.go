@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,6 +41,9 @@ const (
 
 	// audiencesKey is the context key for request audiences.
 	audiencesKey
+
+	// aidKey is the context key for accountid.
+	aidKey
 )
 
 // NewContext instantiates a base context object for request flows.
@@ -49,7 +53,7 @@ func NewContext() context.Context {
 
 // NewDefaultContext instantiates a base context object for request flows in the default namespace
 func NewDefaultContext() context.Context {
-	return WithNamespace(NewContext(), metav1.NamespaceDefault)
+	return WithAccountID(WithNamespace(NewContext(), metav1.NamespaceDefault), metav1.AccountIDDefault)
 }
 
 // WithValue returns a copy of parent in which the value associated with key is val.
@@ -105,4 +109,18 @@ func WithAudiences(ctx context.Context, auds authenticator.Audiences) context.Co
 func AudiencesFrom(ctx context.Context) (authenticator.Audiences, bool) {
 	auds, ok := ctx.Value(audiencesKey).(authenticator.Audiences)
 	return auds, ok
+}
+
+func WithAccountID(parent context.Context, accountid string) context.Context {
+	return context.WithValue(parent, aidKey, accountid)
+}
+
+func AccountIDFrom(ctx context.Context) (string, bool) {
+	accountid, ok := ctx.Value(aidKey).(string)
+	return accountid, ok
+}
+
+func AccountIDValue(ctx context.Context) string {
+	accountid, _ := AccountIDFrom(ctx)
+	return accountid
 }

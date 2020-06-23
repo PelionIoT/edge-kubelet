@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,8 +30,9 @@ import (
 type DaemonSetLister interface {
 	// List lists all DaemonSets in the indexer.
 	List(selector labels.Selector) (ret []*v1.DaemonSet, err error)
+	ListInAccount(aid string, selector labels.Selector) (ret []*v1.DaemonSet, err error)
 	// DaemonSets returns an object that can list and get DaemonSets.
-	DaemonSets(namespace string) DaemonSetNamespaceLister
+	DaemonSets(aid, namespace string) DaemonSetNamespaceLister
 	DaemonSetListerExpansion
 }
 
@@ -51,10 +53,16 @@ func (s *daemonSetLister) List(selector labels.Selector) (ret []*v1.DaemonSet, e
 	})
 	return ret, err
 }
+func (s *daemonSetLister) ListInAccount(aid string, selector labels.Selector) (ret []*v1.DaemonSet, err error) {
+	err = cache.ListAllByAccount(s.indexer, aid, selector, func(m interface{}) {
+		ret = append(ret, m.(*v1.DaemonSet))
+	})
+	return ret, err
+}
 
 // DaemonSets returns an object that can list and get DaemonSets.
-func (s *daemonSetLister) DaemonSets(namespace string) DaemonSetNamespaceLister {
-	return daemonSetNamespaceLister{indexer: s.indexer, namespace: namespace}
+func (s *daemonSetLister) DaemonSets(aid, namespace string) DaemonSetNamespaceLister {
+	return daemonSetNamespaceLister{indexer: s.indexer, namespace: namespace, aid: aid}
 }
 
 // DaemonSetNamespaceLister helps list and get DaemonSets.
@@ -71,11 +79,12 @@ type DaemonSetNamespaceLister interface {
 type daemonSetNamespaceLister struct {
 	indexer   cache.Indexer
 	namespace string
+	aid       string
 }
 
 // List lists all DaemonSets in the indexer for a given namespace.
 func (s daemonSetNamespaceLister) List(selector labels.Selector) (ret []*v1.DaemonSet, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
+	err = cache.ListAllByAccountNamespace(s.indexer, s.aid, s.namespace, selector, func(m interface{}) {
 		ret = append(ret, m.(*v1.DaemonSet))
 	})
 	return ret, err
@@ -83,7 +92,8 @@ func (s daemonSetNamespaceLister) List(selector labels.Selector) (ret []*v1.Daem
 
 // Get retrieves the DaemonSet from the indexer for a given namespace and name.
 func (s daemonSetNamespaceLister) Get(name string) (*v1.DaemonSet, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+	key := cache.CombineAidNamespaceName(s.aid, s.namespace, name)
+	obj, exists, err := s.indexer.GetByKey(key)
 	if err != nil {
 		return nil, err
 	}

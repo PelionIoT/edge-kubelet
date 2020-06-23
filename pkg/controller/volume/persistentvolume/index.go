@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,15 +47,18 @@ func newPersistentVolumeOrderedIndex() persistentVolumeOrderedIndex {
 func accessModesIndexFunc(obj interface{}) ([]string, error) {
 	if pv, ok := obj.(*v1.PersistentVolume); ok {
 		modes := v1helper.GetAccessModesAsString(pv.Spec.AccessModes)
-		return []string{modes}, nil
+		return []string{cache.CombineAidNamespaceName(pv.AccountID, "", modes)}, nil
 	}
 	return []string{""}, fmt.Errorf("object is not a persistent volume: %v", obj)
 }
 
 // listByAccessModes returns all volumes with the given set of
 // AccessModeTypes. The list is unsorted!
-func (pvIndex *persistentVolumeOrderedIndex) listByAccessModes(modes []v1.PersistentVolumeAccessMode) ([]*v1.PersistentVolume, error) {
+func (pvIndex *persistentVolumeOrderedIndex) listByAccessModes(aid string, modes []v1.PersistentVolumeAccessMode) ([]*v1.PersistentVolume, error) {
 	pv := &v1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{
+			AccountID: aid,
+		},
 		Spec: v1.PersistentVolumeSpec{
 			AccessModes: modes,
 		},
@@ -88,10 +92,10 @@ func (pvIndex *persistentVolumeOrderedIndex) findByClaim(claim *v1.PersistentVol
 	// Searches are performed against a set of access modes, so we can attempt
 	// not only the exact matching modes but also potential matches (the GCEPD
 	// example above).
-	allPossibleModes := pvIndex.allPossibleMatchingAccessModes(claim.Spec.AccessModes)
+	allPossibleModes := pvIndex.allPossibleMatchingAccessModes(claim.AccountID, claim.Spec.AccessModes)
 
 	for _, modes := range allPossibleModes {
-		volumes, err := pvIndex.listByAccessModes(modes)
+		volumes, err := pvIndex.listByAccessModes(claim.AccountID, modes)
 		if err != nil {
 			return nil, err
 		}
@@ -322,11 +326,17 @@ func (pvIndex *persistentVolumeOrderedIndex) findBestMatchForClaim(claim *v1.Per
 //
 // This func returns modes with ascending levels of modes to give the user
 // what is closest to what they actually asked for.
-func (pvIndex *persistentVolumeOrderedIndex) allPossibleMatchingAccessModes(requestedModes []v1.PersistentVolumeAccessMode) [][]v1.PersistentVolumeAccessMode {
+func (pvIndex *persistentVolumeOrderedIndex) allPossibleMatchingAccessModes(aid string, requestedModes []v1.PersistentVolumeAccessMode) [][]v1.PersistentVolumeAccessMode {
 	matchedModes := [][]v1.PersistentVolumeAccessMode{}
 	keys := pvIndex.store.ListIndexFuncValues("accessmodes")
 	for _, key := range keys {
-		indexedModes := v1helper.GetAccessModesFromString(key)
+		_, a, name, _ := cache.SplitMetaNamespaceKey(key)
+
+		if aid != a {
+			continue
+		}
+
+		indexedModes := v1helper.GetAccessModesFromString(name)
 		if volumeutil.AccessModesContainedInAll(indexedModes, requestedModes) {
 			matchedModes = append(matchedModes, indexedModes)
 		}
@@ -357,11 +367,11 @@ func (c byAccessModes) Len() int {
 }
 
 func claimToClaimKey(claim *v1.PersistentVolumeClaim) string {
-	return fmt.Sprintf("%s/%s", claim.Namespace, claim.Name)
+	return cache.CombineAidNamespaceName(claim.AccountID, claim.Namespace, claim.Name)
 }
 
-func claimrefToClaimKey(claimref *v1.ObjectReference) string {
-	return fmt.Sprintf("%s/%s", claimref.Namespace, claimref.Name)
+func claimrefToClaimKey(aid string, claimref *v1.ObjectReference) string {
+	return cache.CombineAidNamespaceName(aid, claimref.Namespace, claimref.Name)
 }
 
 // Returns true if PV satisfies all the PVC's requested AccessModes

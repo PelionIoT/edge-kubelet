@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,12 +52,12 @@ import (
 	"k8s.io/client-go/dynamic"
 	clientset "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/rest"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
 	certutil "k8s.io/client-go/util/cert"
 	"k8s.io/client-go/util/certificate"
-	cloudprovider "k8s.io/cloud-provider"
 	csiclientset "k8s.io/csi-api/pkg/client/clientset/versioned"
 	kubeletconfigv1beta1 "k8s.io/kubelet/config/v1beta1"
 	"k8s.io/kubernetes/cmd/kubelet/app/options"
@@ -81,6 +82,7 @@ import (
 	evictionapi "k8s.io/kubernetes/pkg/kubelet/eviction/api"
 	dynamickubeletconfig "k8s.io/kubernetes/pkg/kubelet/kubeletconfig"
 	"k8s.io/kubernetes/pkg/kubelet/kubeletconfig/configfiles"
+	"k8s.io/kubernetes/pkg/kubelet/offlinemanager"
 	"k8s.io/kubernetes/pkg/kubelet/server"
 	"k8s.io/kubernetes/pkg/kubelet/server/streaming"
 	kubetypes "k8s.io/kubernetes/pkg/kubelet/types"
@@ -96,6 +98,8 @@ import (
 	"k8s.io/kubernetes/pkg/version"
 	"k8s.io/kubernetes/pkg/version/verflag"
 	"k8s.io/utils/exec"
+
+	"github.com/armPelionEdge/remotedialer"
 )
 
 const (
@@ -383,7 +387,6 @@ func UnsecuredDependencies(s *options.KubeletServer) (*kubelet.Dependencies, err
 	return &kubelet.Dependencies{
 		Auth:                nil, // default does not enforce auth[nz]
 		CAdvisorInterface:   nil, // cadvisor.New launches background processes (bg http.ListenAndServe, and some bg cleaners), not set here
-		Cloud:               nil, // cloud provider might start background processes
 		ContainerManager:    nil,
 		DockerClientConfig:  dockerClientConfig,
 		KubeClient:          nil,
@@ -513,26 +516,11 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies, stopCh <-chan
 		}
 	}
 
-	if kubeDeps.Cloud == nil {
-		if !cloudprovider.IsExternal(s.CloudProvider) {
-			cloud, err := cloudprovider.InitCloudProvider(s.CloudProvider, s.CloudConfigFile)
-			if err != nil {
-				return err
-			}
-			if cloud == nil {
-				glog.V(2).Infof("No cloud provider specified: %q from the config file: %q\n", s.CloudProvider, s.CloudConfigFile)
-			} else {
-				glog.V(2).Infof("Successfully initialized cloud provider: %q from the config file: %q\n", s.CloudProvider, s.CloudConfigFile)
-			}
-			kubeDeps.Cloud = cloud
-		}
-	}
-
 	hostName, err := nodeutil.GetHostname(s.HostnameOverride)
 	if err != nil {
 		return err
 	}
-	nodeName, err := getNodeName(kubeDeps.Cloud, hostName)
+	nodeName, err := getNodeName(hostName)
 	if err != nil {
 		return err
 	}
@@ -575,6 +563,28 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies, stopCh <-chan
 		closeAllConns, err := kubeletcertificate.UpdateTransport(wait.NeverStop, clientConfig, clientCertificateManager, 5*time.Minute)
 		if err != nil {
 			return err
+		}
+
+		// start offline caching, if enabled
+		if s.KubeletFlags.OfflineCachePath != "" {
+
+			glog.Infof("Offline support enabled. Caching data at '%v' on port %v", s.KubeletFlags.OfflineCachePath, s.KubeletFlags.OfflineCachePort)
+
+			cacheServer, err := offlinemanager.NewCachingServer(context.Background(), string(nodeName), s.KubeletFlags.OfflineCachePath, clientConfig)
+			if err != nil {
+				return err
+			}
+
+			listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%v", s.KubeletFlags.OfflineCachePort))
+			if err != nil {
+				return err
+			}
+
+			go cacheServer.Serve(listener)
+			newConfig := rest.CopyConfig(clientConfig)
+			newConfig.Host = listener.Addr().String()
+			clientConfig = newConfig
+			kubeDeps.OfflineCache = cacheServer.LocalCache()
 		}
 
 		kubeClient, err = clientset.NewForConfig(clientConfig)
@@ -740,6 +750,13 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies, stopCh <-chan
 		glog.Warning(err)
 	}
 
+	// start fog-proxy tunnel, if enabled
+	if s.KubeletFlags.FogProxyAddress != "" {
+		glog.Infof("Starting fog-proxy tunnel (node=%s,fog-proxy-address=%s", nodeName, s.KubeletFlags.FogProxyAddress)
+
+		go RunFogProxyTunnel(nodeName, s.KubeletFlags.FogProxyAddress)
+	}
+
 	if err := RunKubelet(s, kubeDeps, s.RunOnce); err != nil {
 		return err
 	}
@@ -773,24 +790,8 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies, stopCh <-chan
 
 // getNodeName returns the node name according to the cloud provider
 // if cloud provider is specified. Otherwise, returns the hostname of the node.
-func getNodeName(cloud cloudprovider.Interface, hostname string) (types.NodeName, error) {
-	if cloud == nil {
-		return types.NodeName(hostname), nil
-	}
-
-	instances, ok := cloud.Instances()
-	if !ok {
-		return "", fmt.Errorf("failed to get instances from cloud provider")
-	}
-
-	nodeName, err := instances.CurrentNodeName(context.TODO(), hostname)
-	if err != nil {
-		return "", fmt.Errorf("error fetching current node name from cloud provider: %v", err)
-	}
-
-	glog.V(2).Infof("cloud provider determined current node name to be %s", nodeName)
-
-	return nodeName, nil
+func getNodeName(hostname string) (types.NodeName, error) {
+	return types.NodeName(hostname), nil
 }
 
 // InitializeTLS checks for a configured TLSCertFile and TLSPrivateKeyFile: if unspecified a new self-signed
@@ -903,7 +904,7 @@ func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencie
 		return err
 	}
 	// Query the cloud provider for our node name, default to hostname if kubeDeps.Cloud == nil
-	nodeName, err := getNodeName(kubeDeps.Cloud, hostname)
+	nodeName, err := getNodeName(hostname)
 	if err != nil {
 		return err
 	}
@@ -952,7 +953,6 @@ func RunKubelet(kubeServer *options.KubeletServer, kubeDeps *kubelet.Dependencie
 		kubeServer.HostnameOverride,
 		kubeServer.NodeIP,
 		kubeServer.ProviderID,
-		kubeServer.CloudProvider,
 		kubeServer.CertDirectory,
 		kubeServer.RootDirectory,
 		kubeServer.RegisterNode,
@@ -1009,7 +1009,7 @@ func startKubelet(k kubelet.Bootstrap, podCfg *config.PodConfig, kubeCfg *kubele
 
 	// start the kubelet server
 	if enableServer {
-		go k.ListenAndServe(net.ParseIP(kubeCfg.Address), uint(kubeCfg.Port), kubeDeps.TLSOptions, kubeDeps.Auth, kubeCfg.EnableDebuggingHandlers, kubeCfg.EnableContentionProfiling)
+		go k.ListenAndServe(net.ParseIP(kubeCfg.Address), uint(kubeCfg.Port), nil, nil, kubeCfg.EnableDebuggingHandlers, kubeCfg.EnableContentionProfiling)
 
 	}
 	if kubeCfg.ReadOnlyPort > 0 {
@@ -1025,7 +1025,6 @@ func CreateAndInitKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	hostnameOverride string,
 	nodeIP string,
 	providerID string,
-	cloudProvider string,
 	certDirectory string,
 	rootDirectory string,
 	registerNode bool,
@@ -1059,7 +1058,6 @@ func CreateAndInitKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		hostnameOverride,
 		nodeIP,
 		providerID,
-		cloudProvider,
 		certDirectory,
 		rootDirectory,
 		registerNode,
@@ -1187,4 +1185,12 @@ func RunDockershim(f *options.KubeletFlags, c *kubeletconfiginternal.KubeletConf
 	}
 	<-stopCh
 	return nil
+}
+
+func RunFogProxyTunnel(nodeName types.NodeName, fogProxyAddress string) {
+	headers := http.Header{
+		"X-Tunnel-ID": []string{string(nodeName)},
+	}
+
+	remotedialer.ClientConnect(fogProxyAddress, headers, nil, func(string, string) bool { return true }, nil)
 }

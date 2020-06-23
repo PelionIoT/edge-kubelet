@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -118,6 +119,10 @@ type ObjectMeta struct {
 	// More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#idempotency
 	// +optional
 	GenerateName string `json:"generateName,omitempty" protobuf:"bytes,2,opt,name=generateName"`
+
+	// Cannot be updated.
+	// +optional
+	AccountID string `json:"accountid,omitempty" protobuf:"bytes,17,opt,name=accountid"`
 
 	// Namespace defines the space within each name must be unique. An empty namespace is
 	// equivalent to the "default" namespace, but "default" is the canonical representation.
@@ -283,6 +288,10 @@ const (
 	NamespaceSystem string = "kube-system"
 	// NamespacePublic is the namespace where we place public info (ConfigMaps)
 	NamespacePublic string = "kube-public"
+
+	AccountIDDefault string = "default"
+	AccountIDAll     string = ""
+	AccountIDNone    string = ""
 )
 
 // OwnerReference contains enough information to let you identify an owning

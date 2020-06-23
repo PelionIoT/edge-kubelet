@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +31,7 @@ type ConfigMapLister interface {
 	// List lists all ConfigMaps in the indexer.
 	List(selector labels.Selector) (ret []*v1.ConfigMap, err error)
 	// ConfigMaps returns an object that can list and get ConfigMaps.
-	ConfigMaps(namespace string) ConfigMapNamespaceLister
+	ConfigMaps(aid, namespace string) ConfigMapNamespaceLister
 	ConfigMapListerExpansion
 }
 
@@ -53,8 +54,8 @@ func (s *configMapLister) List(selector labels.Selector) (ret []*v1.ConfigMap, e
 }
 
 // ConfigMaps returns an object that can list and get ConfigMaps.
-func (s *configMapLister) ConfigMaps(namespace string) ConfigMapNamespaceLister {
-	return configMapNamespaceLister{indexer: s.indexer, namespace: namespace}
+func (s *configMapLister) ConfigMaps(aid, namespace string) ConfigMapNamespaceLister {
+	return configMapNamespaceLister{indexer: s.indexer, namespace: namespace, aid: aid}
 }
 
 // ConfigMapNamespaceLister helps list and get ConfigMaps.
@@ -71,11 +72,12 @@ type ConfigMapNamespaceLister interface {
 type configMapNamespaceLister struct {
 	indexer   cache.Indexer
 	namespace string
+	aid       string
 }
 
 // List lists all ConfigMaps in the indexer for a given namespace.
 func (s configMapNamespaceLister) List(selector labels.Selector) (ret []*v1.ConfigMap, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
+	err = cache.ListAllByAccountNamespace(s.indexer, s.aid, s.namespace, selector, func(m interface{}) {
 		ret = append(ret, m.(*v1.ConfigMap))
 	})
 	return ret, err
@@ -83,7 +85,8 @@ func (s configMapNamespaceLister) List(selector labels.Selector) (ret []*v1.Conf
 
 // Get retrieves the ConfigMap from the indexer for a given namespace and name.
 func (s configMapNamespaceLister) Get(name string) (*v1.ConfigMap, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
+	key := cache.CombineAidNamespaceName(s.aid, s.namespace, name)
+	obj, exists, err := s.indexer.GetByKey(key)
 	if err != nil {
 		return nil, err
 	}

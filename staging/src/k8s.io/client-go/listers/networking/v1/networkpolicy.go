@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +30,7 @@ import (
 type NetworkPolicyLister interface {
 	// List lists all NetworkPolicies in the indexer.
 	List(selector labels.Selector) (ret []*v1.NetworkPolicy, err error)
+	ListInAccount(accountid string, selector labels.Selector) (ret []*v1.NetworkPolicy, err error)
 	// NetworkPolicies returns an object that can list and get NetworkPolicies.
 	NetworkPolicies(namespace string) NetworkPolicyNamespaceLister
 	NetworkPolicyListerExpansion
@@ -47,6 +49,12 @@ func NewNetworkPolicyLister(indexer cache.Indexer) NetworkPolicyLister {
 // List lists all NetworkPolicies in the indexer.
 func (s *networkPolicyLister) List(selector labels.Selector) (ret []*v1.NetworkPolicy, err error) {
 	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
+		ret = append(ret, m.(*v1.NetworkPolicy))
+	})
+	return ret, err
+}
+func (s *networkPolicyLister) ListInAccount(aid string, selector labels.Selector) (ret []*v1.NetworkPolicy, err error) {
+	err = cache.ListAllByAccount(s.indexer, aid, selector, func(m interface{}) {
 		ret = append(ret, m.(*v1.NetworkPolicy))
 	})
 	return ret, err

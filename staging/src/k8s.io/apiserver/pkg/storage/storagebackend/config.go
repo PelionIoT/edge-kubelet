@@ -1,4 +1,5 @@
 /*
+Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2016 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,7 +28,7 @@ const (
 	StorageTypeUnset = ""
 	StorageTypeETCD3 = "etcd3"
 
-	DefaultCompactInterval = 5 * time.Minute
+	DefaultCompactInterval = 12 * time.Hour
 )
 
 // Config is configuration for creating a storage backend.
