@@ -1,4 +1,4 @@
 #!/usr/bin/env groovy
-@Library('edge-ci@edge-kubelet_ci') _
+@Library('edge-ci@master') _
 
 edge_kubelet_ci()
