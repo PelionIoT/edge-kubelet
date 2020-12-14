@@ -178,7 +178,8 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 	start := r.clock.Now()
 	list, err := r.listerWatcher.List(options)
 	if err != nil {
-		return fmt.Errorf("%s: Failed to list %v: %v", r.name, r.expectedType, err)
+		// This isn't an error, since we could be in offline mode
+		return nil
 	}
 	r.metrics.listDuration.Observe(time.Since(start).Seconds())
 	listMetaInterface, err := meta.ListAccessor(list)
@@ -249,7 +250,8 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 			case io.ErrUnexpectedEOF:
 				glog.V(1).Infof("%s: Watch for %v closed with unexpected EOF: %v", r.name, r.expectedType, err)
 			default:
-				utilruntime.HandleError(fmt.Errorf("%s: Failed to watch %v: %v", r.name, r.expectedType, err))
+				// Since we could be in offline mode, it is not an error if we can't reach the server.
+				// utilruntime.HandleError(fmt.Errorf("%s: Failed to watch %v: %v", r.name, r.expectedType, err))
 			}
 			// If this is "connection refused" error, it means that most likely apiserver is not responsive.
 			// It doesn't make sense to re-list all objects because most likely we will be able to restart
@@ -268,7 +270,7 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 
 		if err := r.watchHandler(w, &resourceVersion, resyncerrc, stopCh); err != nil {
 			if err != errorStopRequested {
-				glog.Warningf("%s: watch of %v ended with: %v", r.name, r.expectedType, err)
+				glog.V(4).Infof("%s: watch of %v ended with: %v", r.name, r.expectedType, err)
 			}
 			return nil
 		}
