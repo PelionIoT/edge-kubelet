@@ -202,7 +202,7 @@ func recordEvent(sink EventSink, event *v1.Event, patch []byte, updateExistingEv
 		if errors.IsAlreadyExists(err) {
 			glog.V(5).Infof("Server rejected event '%#v': '%v' (will not retry!)", event, err)
 		} else {
-			glog.Errorf("Server rejected event '%#v': '%v' (will not retry!)", event, err)
+			glog.V(4).Infof("Server rejected event '%#v': '%v' (will not retry!)", event, err)
 		}
 		return true
 	case *errors.UnexpectedObjectError:
@@ -211,7 +211,7 @@ func recordEvent(sink EventSink, event *v1.Event, patch []byte, updateExistingEv
 	default:
 		// This case includes actual http transport errors. Go ahead and retry.
 	}
-	glog.Errorf("Unable to write event: '%v' (may retry after sleeping)", err)
+	glog.V(4).Infof("Unable to write event: '%v' (may retry after sleeping)", err)
 	return false
 }
 

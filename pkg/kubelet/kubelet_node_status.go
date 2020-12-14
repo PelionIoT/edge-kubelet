@@ -375,12 +375,14 @@ func (kl *Kubelet) updateNodeStatus() error {
 			if i > 0 && kl.onRepeatedHeartbeatFailure != nil {
 				kl.onRepeatedHeartbeatFailure()
 			}
-			glog.Errorf("Error updating node status, will retry: %v", err)
+			glog.V(4).Infof("Couldn't update node status, maybe offline? Will retry: %v", err)
 		} else {
 			return nil
 		}
 	}
-	return fmt.Errorf("update node status exceeds retry count")
+
+	// When working in offline mode, failed updates are expected
+	return nil
 }
 
 // tryUpdateNodeStatus tries to update node status to master.

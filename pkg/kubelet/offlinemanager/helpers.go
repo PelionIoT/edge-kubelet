@@ -460,7 +460,7 @@ func NewListWatcher(ctx context.Context, client dynamic.Interface, resourceInfo 
 		if err == nil {
 			listBackoff = BackoffStart
 		} else {
-			glog.Warningf("Failed to list '%v'. Retrying in %v", resourceInfo.Name, listBackoff)
+			glog.V(4).Infof("Failed to list '%v'. Retrying in %v", resourceInfo.Name, listBackoff)
 			SleepWithContext(ctx, listBackoff)
 			listBackoff *= 2
 			if listBackoff > BackoffMax {
