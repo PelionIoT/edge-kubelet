@@ -1,6 +1,7 @@
 /*
-Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
+Copyright 2018-2020, Arm Limited and affiliates.
+Copyright 2021, Pelion IoT and affiliates.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -100,6 +101,8 @@ import (
 	"k8s.io/utils/exec"
 
 	"github.com/armPelionEdge/remotedialer"
+
+	hosts "k8s.io/kubernetes/pkg/kubelet/hostnameRecords"
 )
 
 const (
@@ -585,6 +588,17 @@ func run(s *options.KubeletServer, kubeDeps *kubelet.Dependencies, stopCh <-chan
 			newConfig.Host = listener.Addr().String()
 			clientConfig = newConfig
 			kubeDeps.OfflineCache = cacheServer.LocalCache()
+		}
+
+		// save hostname records to provided file if enabled
+		// uses standard Linux hosts format, such as /etc/hosts
+		if s.KubeletFlags.HostsPath != "" {
+			hostnameWatcher, err := hosts.NewHostnameWatcher(clientConfig, s.KubeletFlags.HostsPath, "hostname.local")
+			if err != nil {
+				glog.Warningf("%v", err)
+			} else {
+				go hostnameWatcher.Run(stopCh)
+			}
 		}
 
 		kubeClient, err = clientset.NewForConfig(clientConfig)

@@ -1,14 +1,15 @@
 /*
-Copyright 2014 The Kubernetes Authors.
+Copyright 2018-2020, Arm Limited and affiliates.
+Copyright 2021, Pelion IoT and affiliates.
 
-Licensed under the Apache License, Version 2.0 (the "License");
+Licensed under the Apache License, Version 2.0 (the License);
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
+distributed under the License is distributed on an AS IS BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
@@ -21,6 +22,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/golang/glog"
@@ -299,4 +301,67 @@ func procMountIsDefault(pod *v1.Pod) bool {
 	}
 
 	return true
+}
+
+var (
+	HostnameAdmitReason = "DuplicateHostname"
+)
+
+func NewHostnameAdmitHandler() PodAdmitHandler {
+	return &hostnameAdmitHandler{}
+}
+
+type hostnameAdmitHandler struct{}
+
+func (*hostnameAdmitHandler) Admit(attrs *PodAdmitAttributes) PodAdmitResult {
+	// If the pod is already running or terminated, no need to check hostname.
+	if attrs.Pod.Status.Phase != v1.PodPending {
+		return PodAdmitResult{Admit: true}
+	}
+
+	hostname := attrs.Pod.Spec.Hostname
+
+	// If Pod has no hostname, no need to check for uniqueness
+	if hostname == "" {
+		return PodAdmitResult{Admit: true}
+	}
+
+	multipleBlocked := true
+	podAdmitResult := PodAdmitResult{Admit: true}
+
+	for _, pod := range attrs.OtherPods {
+		// Create block rule if the hostname is not unique
+		if hostname == pod.Spec.Hostname && pod.Name != attrs.Pod.Name {
+			podAdmitResult = PodAdmitResult{
+				Admit:   false,
+				Reason:  HostnameAdmitReason,
+				Message: fmt.Sprintf("Hostname '%s' already exists in Pod '%s'", hostname, pod.Name),
+			}
+
+			// If there are many Blocked Pods and no running Pod with this hostname,
+			// we need to ensure that only 1 get admitted at the time.
+			if pod.Status.Phase == v1.PodRunning || // Pod is running
+				pod.DeletionTimestamp != nil || // Pod is being deleted
+				(pod.Status.Phase == v1.PodPending && pod.Status.Reason != HostnameAdmitReason) { // Pod is pending to be run
+				multipleBlocked = false
+			}
+		}
+	}
+
+	// We have several blocked Pods, admit the one with the lowest lexographical name
+	if multipleBlocked {
+		podList := []string{}
+		for _, pod := range attrs.OtherPods {
+			if hostname == pod.Spec.Hostname {
+				podList = append(podList, pod.Name)
+			}
+		}
+		sort.Strings(podList)
+
+		if len(podList) > 0 && attrs.Pod.Name == podList[0] {
+			podAdmitResult = PodAdmitResult{Admit: true, Reason: "", Message: ""}
+		}
+	}
+
+	return podAdmitResult
 }

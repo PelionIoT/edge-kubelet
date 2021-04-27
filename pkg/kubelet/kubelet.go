@@ -1,6 +1,7 @@
 /*
-Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
+Copyright 2018-2020, Arm Limited and affiliates.
+Copyright 2021, Pelion IoT and affiliates.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -882,6 +883,9 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	}
 
 	klet.softAdmitHandlers.AddPodAdmitHandler(lifecycle.NewProcMountAdmitHandler(klet.containerRuntime))
+
+	// Add admit handler to reject Pods if hostname is unavailable
+	klet.softAdmitHandlers.AddPodAdmitHandler(lifecycle.NewHostnameAdmitHandler())
 
 	// Finally, put the most recent version of the config on the Kubelet, so
 	// people can see how it was configured.

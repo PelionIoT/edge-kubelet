@@ -1,6 +1,7 @@
 /*
-Copyright 2018-2020, Arm Limited and affiliates.
 Copyright 2015 The Kubernetes Authors.
+Copyright 2018-2020, Arm Limited and affiliates.
+Copyright 2021, Pelion IoT and affiliates.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -211,6 +212,8 @@ type KubeletFlags struct {
 	OfflineCachePath string
 	// Port to use for offline cache
 	OfflineCachePort int32
+	// Path to hosts file for saving Pod hostname records
+	HostsPath string
 }
 
 // NewKubeletFlags will create a new KubeletFlags with default values
@@ -431,6 +434,7 @@ func (f *KubeletFlags) AddFlags(mainfs *pflag.FlagSet) {
 	fs.StringVar(&f.FogProxyAddress, "fog-proxy-address", f.FogProxyAddress, "")
 	fs.StringVar(&f.OfflineCachePath, "offline-cache-path", f.OfflineCachePath, "Path to the directory where resources are cached so Kubelet can remain running offline.")
 	fs.Int32Var(&f.OfflineCachePort, "offline-cache-port", f.OfflineCachePort, "Port to use for the offline cache proxy.")
+	fs.StringVar(&f.HostsPath, "hosts-path", f.HostsPath, "Path to hosts file for storing Pod hostname records. Disabled by default.")
 }
 
 // AddKubeletConfigFlags adds flags for a specific kubeletconfig.KubeletConfiguration to the specified FlagSet
