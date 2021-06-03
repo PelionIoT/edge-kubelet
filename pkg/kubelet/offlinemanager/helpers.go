@@ -1,5 +1,6 @@
 /*
 Copyright 2018-2020, Arm Limited and affiliates.
+Copyright 2021, Pelion IoT and affiliates.
 
 Licensed under the Apache License, Version 2.0 (the License);
 you may not use this file except in compliance with the License.
@@ -124,8 +125,14 @@ type ResourceInfo struct {
 	Name string
 	// Resource "KIND" as returned by 'kubectl api-resources'.Same as 'kind' used in yaml files.
 	// Example: Pod
-	Kind            string
-	Namespaced      bool
+	Kind string
+	// Api group
+	// Example: networking.k8s.io
+	Group      string
+	Namespaced bool
+	// Mark this resource as disabled, for example, if the apiserver does not support it
+	// or we simply wish to never fetch it
+	Disabled        bool
 	WatchNotAllowed bool
 	GetAttr         storage.AttrFunc
 	GetDependencies DependenciesFunc
@@ -133,8 +140,8 @@ type ResourceInfo struct {
 
 var SupportedResources []ResourceInfo = []ResourceInfo{
 	{
-		Kind:            "Pod",
 		Name:            "pods",
+		Kind:            "Pod",
 		Namespaced:      true,
 		GetAttr:         UnstructuredGetAttr("Pod"),
 		GetDependencies: GetUnstructuredPodDeps,
@@ -177,6 +184,27 @@ var SupportedResources []ResourceInfo = []ResourceInfo{
 		Kind:       "Service",
 		Namespaced: true,
 		GetAttr:    UnstructuredGetAttr("Service"),
+		Disabled:   true,
+	},
+	{
+		Name:       "endpoints",
+		Kind:       "Endpoints",
+		Namespaced: true,
+		GetAttr:    UnstructuredGetAttr("Endpoints"),
+		Disabled:   true,
+	},
+	{
+		Name:       "namespaces",
+		Kind:       "Namespace",
+		Namespaced: false,
+		GetAttr:    UnstructuredGetAttr("Namespace"),
+	},
+	{
+		Name:       "networkpolicies",
+		Kind:       "NetworkPolicy",
+		Group:      "networking.k8s.io",
+		Namespaced: false,
+		GetAttr:    UnstructuredGetAttr("NetworkPolicy"),
 	},
 }
 
@@ -378,7 +406,7 @@ func SelectorUniquelyIdentifiesObject(selector storage.SelectionPredicate, names
 //
 func NewListWatcher(ctx context.Context, client dynamic.Interface, resourceInfo ResourceInfo, fieldSelector fields.Selector) *cache.ListWatch {
 	grv := schema.GroupVersionResource{
-		Group:    "",
+		Group:    resourceInfo.Group,
 		Version:  "v1",
 		Resource: resourceInfo.Name,
 	}

@@ -1,5 +1,6 @@
 /*
 Copyright 2018-2020, Arm Limited and affiliates.
+Copyright 2021, Pelion IoT and affiliates.
 
 Licensed under the Apache License, Version 2.0 (the License);
 you may not use this file except in compliance with the License.
@@ -26,6 +27,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,13 +42,28 @@ import (
 
 const (
 	// Wait a little bit before closing watches so they are not immediately retried by Kubelet
-	WatchTimeout = time.Second * 30
+	KubeletWatchTimeout  = time.Second * 30
+	XRoutingBlockHeader  = "X-Routing-Block"
+	XForwardedHostHeader = "X-Forwarded-Host"
+	XOriginHostHeader    = "X-Origin-Host"
 )
+
+type roundTripperFilter struct {
+	parent http.RoundTripper
+}
 
 type CachingServer struct {
 	ctx    context.Context
 	cache  *localCache
 	server http.Server
+}
+
+func (rtf *roundTripperFilter) RoundTrip(r *http.Request) (*http.Response, error) {
+	if err, ok := r.Header[XRoutingBlockHeader]; ok {
+		glog.V(4).Infof("Blocked request to API Server: %s", r.URL.Path)
+		return nil, fmt.Errorf("%s: %s", XRoutingBlockHeader, err)
+	}
+	return rtf.parent.RoundTrip(r)
 }
 
 func NewCachingServer(ctx context.Context, node string, storeDir string, config *rest.Config) (*CachingServer, error) {
@@ -74,6 +92,9 @@ func NewCachingServer(ctx context.Context, node string, storeDir string, config 
 	cache.AddSubsetDependency("pods", fields.Set{"spec.nodeName": node})
 	cache.AddSubsetDependency("nodes", fields.Set{"metadata.name": node})
 	cache.AddSubsetDependency("services", fields.Set{})
+	cache.AddSubsetDependency("endpoints", fields.Set{})
+	cache.AddSubsetDependency("namespaces", fields.Set{})
+	cache.AddSubsetDependency("networkpolicies", fields.Set{})
 	c.cache = cache
 
 	// Setup routes to handle
@@ -88,6 +109,11 @@ func NewCachingServer(ctx context.Context, node string, storeDir string, config 
 	ws.Route(ws.GET("/api/v1/namespaces/{namespace}/{resource}").To(c.list))
 	ws.Route(ws.GET("/api/v1/namespaces/{namespace}/{resource}/{name}").To(c.get))
 	ws.Route(ws.GET("/api/v1/namespaces/{namespace}/{resource}/{name}/status").To(c.status))
+	ws.Route(ws.GET("/apis/networking.k8s.io/v1/{resource}").To(c.list))
+	ws.Route(ws.GET("/apis/networking.k8s.io/v1/{resource}/{name}").To(c.get))
+	ws.Route(ws.GET("/apis/networking.k8s.io/v1/namespaces/{namespace}/{resource}").To(c.list))
+	ws.Route(ws.GET("/apis/networking.k8s.io/v1/namespaces/{namespace}/{resource}/{name}").To(c.get))
+	ws.Route(ws.GET("/apis/networking.k8s.io/v1/namespaces/{namespace}/{resource}/{name}/status").To(c.status))
 	wsContainer.Add(ws)
 
 	// Setup the proxy. This will send requests to the same server
@@ -98,6 +124,58 @@ func NewCachingServer(ctx context.Context, node string, storeDir string, config 
 		return nil, err
 	}
 	proxy := httputil.NewSingleHostReverseProxy(destUrl)
+
+	proxy.Transport = &roundTripperFilter{
+		parent: http.DefaultTransport,
+	}
+
+	// Modify outgoing query to only fetch resources related to the Node.
+	// Since we don't support communication between nodes, other nodes are
+	// irrelevant.
+	proxy.Director = func(req *http.Request) {
+		req.Header.Add(XForwardedHostHeader, req.Host)
+		req.Header.Add(XForwardedHostHeader, destUrl.Host)
+		req.URL.Scheme = destUrl.Scheme
+		req.URL.Host = destUrl.Host
+
+		// Match both global and namespaced Pod requests
+		matched, err := regexp.MatchString(`^/api/v1/(namespaces/.*/pods)|pods$`, req.URL.Path)
+		if err != nil {
+			return
+		}
+		if matched {
+			if !strings.Contains(req.URL.RawQuery, "spec.nodeName") {
+				glog.V(8).Info("Add nodeName selector to query: %s", req.URL)
+				if len(req.URL.RawQuery) == 0 {
+					req.URL.RawQuery = fmt.Sprintf("fieldSelector=spec.nodeName=%s", node)
+				} else {
+					req.URL.RawQuery += fmt.Sprintf("&fieldSelector=spec.nodeName=%s", node)
+				}
+			}
+		}
+
+		// Match Node requests
+		matched, err = regexp.MatchString(`^/api/v1/nodes$`, req.URL.Path)
+		if err != nil {
+			return
+		}
+		if matched {
+			if !strings.Contains(req.URL.RawQuery, "metadata.name") {
+				glog.V(8).Info("Add nodeName selector to query: %s", req.URL)
+				if len(req.URL.RawQuery) == 0 {
+					req.URL.RawQuery = fmt.Sprintf("fieldSelector=metadata.name=%s", node)
+				} else {
+					req.URL.RawQuery += fmt.Sprintf("&fieldSelector=metadata.name=%s", node)
+				}
+			}
+		}
+
+		// Block outgoing requests if they request resources "services" or "endpoints"
+		if strings.Contains(req.URL.Path, "services") || strings.Contains(req.URL.Path, "endpoints") {
+			req.Header.Add(XRoutingBlockHeader, fmt.Sprintf("Request blocked in proxy.Director: %s", req.URL.Path))
+		}
+	}
+
 	// Don't buffer the response for too long. Buffering indefinitely interferes
 	// with watch notifications and causes pod creation and deletion to hang.
 	// Note - a 100ms flush time is used rather than immediate flushing because
@@ -157,7 +235,7 @@ func (c *CachingServer) list(r *restful.Request, w *restful.Response) {
 		return
 	}
 	if options.Watch {
-		time.Sleep(WatchTimeout)
+		time.Sleep(KubeletWatchTimeout)
 		glog.Infof("Unsupported Watch '%v'", r.Request.URL)
 		w.WriteHeader(http.StatusBadGateway)
 		return

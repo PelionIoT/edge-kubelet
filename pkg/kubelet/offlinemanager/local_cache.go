@@ -1,5 +1,6 @@
 /*
 Copyright 2018-2020, Arm Limited and affiliates.
+Copyright 2021, Pelion IoT and affiliates.
 
 Licensed under the Apache License, Version 2.0 (the License);
 you may not use this file except in compliance with the License.
@@ -59,6 +60,12 @@ type subsetCache struct {
 	initialContents bool
 	initialVersion  string
 	getObjDeps      DependenciesFunc
+	group           string
+	// Mark this resource as disabled. For example, if the apiserver does not support it or
+	// we simply wish to never fetch it but we need it in the cache.
+	// This comes in handy when other components expect this resource to exist,
+	// but don't care about the values
+	disabled bool
 	// Mutable
 	parent     *localCache
 	store      cache.Store
@@ -79,11 +86,13 @@ func newSubsetCache(parent *localCache, resourceInfo ResourceInfo, fieldset fiel
 	c := &subsetCache{
 		resource:       resourceInfo.Name,
 		resourceKind:   resourceInfo.Kind,
+		group:          resourceInfo.Group,
 		fieldset:       fieldset,
 		initialVersion: resourceVersion,
 		getObjDeps:     getDeps,
 		parent:         parent,
 		wg:             &parent.wg,
+		disabled:       resourceInfo.Disabled,
 	}
 	c.ctx, c.cancel = context.WithCancel(parent.ctx)
 
@@ -113,7 +122,6 @@ func newSubsetCache(parent *localCache, resourceInfo ResourceInfo, fieldset fiel
 	})
 
 	if contents != nil {
-
 		// Add initial contents to the store
 		newContents := make([]interface{}, 0, len(contents))
 		for _, content := range contents {
@@ -123,6 +131,10 @@ func newSubsetCache(parent *localCache, resourceInfo ResourceInfo, fieldset fiel
 		store.Replace(newContents, resourceVersion)
 
 		// Mark this cache as having initial contents so it can be used right away
+		c.initialContents = true
+	} else if resourceInfo.Disabled {
+		glog.V(4).Infof("Resource %s is disabled, creating empty subset", resourceInfo.Name)
+		store.Replace(make([]interface{}, 0, 0), resourceVersion)
 		c.initialContents = true
 	}
 
@@ -166,10 +178,15 @@ func (c *subsetCache) updateDepsInNewThread(oldObj, newObj interface{}) {
 }
 
 func (c *subsetCache) list(sp storage.SelectionPredicate) (*unstructured.UnstructuredList, error) {
+	apiVersion := "v1"
+	if len(c.group) > 0 {
+		apiVersion = c.group + "/" + apiVersion
+	}
+
 	ul := unstructured.UnstructuredList{
 		Object: map[string]interface{}{
 			"kind":       c.resourceKind + "List",
-			"apiVersion": "v1",
+			"apiVersion": apiVersion,
 		},
 	}
 
@@ -229,7 +246,11 @@ func (c *subsetCache) start() {
 	go func() {
 		defer c.wg.Done()
 
-		c.controller.Run(c.ctx.Done())
+		// Do not start k8s watcher if disabled,
+		// requests to resource will always return an empty list
+		if !c.disabled {
+			c.controller.Run(c.ctx.Done())
+		}
 
 		for _, dep := range c.getDeps() {
 			c.parent.removeSubsetDependency(dep.Name, dep.Set, true)
